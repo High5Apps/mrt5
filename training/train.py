@@ -103,8 +103,6 @@ if __name__ == "__main__":
                         help='Use cache for training.')
     parser.add_argument('--train_from_scratch',
                         action='store_true', help='Train from scratch.')
-    parser.add_argument('--load_from_path', action='store_true',
-                        help='Load model from path defined by name, model type, seed, and task.')
     parser.add_argument('--model_path', type=str, default=None,
                         help='Path to model checkpoint to load.')
     parser.add_argument('--checkpoint', type=str, default=None,
@@ -150,7 +148,7 @@ if __name__ == "__main__":
                         help='Number of steps before applying regularizer.')
     parser.add_argument('--use_softmax1',
                         action='store_true', help='Specify layer to add delete gate after.')
-    parser.add_argument('--delete_gate_layer', type=int, default=2)
+    parser.add_argument('--delete_gate_layer', type=int, default=2, help='Layer to add delete gate after.')
 
     # Entropy regularization loss
     parser.add_argument('--entropy_reg_coeff_1', type=float,
@@ -193,7 +191,7 @@ if __name__ == "__main__":
         raise ValueError(
             "Entropy regularization loss requires both entropy_reg_coeff_1 and entropy_reg_coeff_2 to be specified.")
 
-    if args.train_from_scratch and args.load_from_path:
+    if args.train_from_scratch and args.model_path is not None:
         raise ValueError(
             "Cannot train from scratch and load from path simultaneously.")
 
@@ -264,7 +262,7 @@ if __name__ == "__main__":
             module, 1 / math.sqrt(model.config.num_layers)))
         model.decoder.apply(lambda module: model._init_weights(
             module, 1 / math.sqrt(model.config.num_decoder_layers)))
-    elif args.load_from_path:
+    elif args.model_path is not None:
         print("Loading model from path...")
         model = load_model_from_path(
             model_class=args.model_type,
