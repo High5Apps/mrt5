@@ -110,9 +110,9 @@ Below are example inputs and targets for each of our three diagnostic tasks.
 
 | Task                       | Input                                  | Target                                |
 |----------------------------|----------------------------------------|---------------------------------------|
-| Simple Vowel Removal       | z<span style="color:#D2691E;">E</span>KRr<span style="color:#D2691E;">e</span>JcBxG<span style="color:#D2691E;">U</span>JQbZS<span style="color:#D2691E;">Io</span>s                   | zKRrJcBxGJQbZSs                       |
-| Contextual Vowel Removal   | <span style="color:#1E90FF;">EOu</span>bXg<span style="color:#D2691E;">a</span>YVb<span style="color:#D2691E;">i</span><span style="color:#1E90FF;">O</span>g<span style="color:#D2691E;">i</span><span style="color:#1E90FF;">I</span>r<span style="color:#D2691E;">E</span>nld                   | <span style="color:#1E90FF;">EOu</span>bXgYVb</span><span style="color:#1E90FF;">O</span>g</span><span style="color:#1E90FF;">I</span>rnld                      |
-| Sequence Merge             | KjAxIp<span style="color:#FF1493;">ABC</span>ZCxBcni<span style="color:#FF1493;">ABC</span>s                   |  KjAxIp<span style="color:#FF1493;">D</span>ZCxBcni<span style="color:#FF1493;">D</span>s                      |
+| Simple Vowel Removal       | z<span style="color:darkorange">E</span>KRr<span style="color:darkorange">e</span>JcBxG<span style="color:darkorange">U</span>JQbZS<span style="color:darkorange">Io</span>s                   | zKRrJcBxGJQbZSs                       |
+| Contextual Vowel Removal   | <span style="color:green">EOu</span>bXg<span style="color:darkorange">a</span>YVb<span style="color:darkorange">i</span><span style="color:green">O</span>g<span style="color:darkorange">i</span><span style="color:green">I</span>r<span style="color:darkorange">E</span>nld                   | <span style="color:green">EOu</span>bXgYVb</span><span style="color:green">O</span>g</span><span style="color:green">I</span>rnld                      |
+| Sequence Merge             | KjAxIp<span style="color:magenta">ABC</span>ZCxBcni<span style="color:magenta">ABC</span>s                   |  KjAxIp<span style="color:magenta">D</span>ZCxBcni<span style="color:magenta">D</span>s                      |
 
 
 The script that generates data for the diagnostic tasks is `preprocess_diagnostic_dataset.py`.
