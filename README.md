@@ -16,7 +16,7 @@ This repository includes the code to replicate every experiment in our paper and
 
 If you use this repo, please cite the MrT5 paper:
 
-```
+```bibtex
 @unpublished{kallini2024mrt5dynamictokenmerging,
       title={MrT5: Dynamic Token Merging for Efficient Byte-level Language Models}, 
       author={Julie Kallini and Shikhar Murty and Christopher D. Manning and Christopher Potts and Róbert Csordás},
@@ -30,7 +30,7 @@ If you use this repo, please cite the MrT5 paper:
 
 Also cite the ByT5 paper:
 
-```
+```bibtex
 @article{xue-etal-2022-byt5,
     title = "{B}y{T}5: Towards a Token-Free Future with Pre-trained Byte-to-Byte Models",
     author = "Xue, Linting  and
