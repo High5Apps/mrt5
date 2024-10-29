@@ -18,13 +18,13 @@ If you use this repo, please cite the MrT5 paper:
 
 ```bibtex
 @unpublished{kallini2024mrt5dynamictokenmerging,
-      title={MrT5: Dynamic Token Merging for Efficient Byte-level Language Models}, 
-      author={Julie Kallini and Shikhar Murty and Christopher D. Manning and Christopher Potts and Róbert Csordás},
-      year={2024},
-      eprint={2410.20771},
-      archivePrefix={arXiv},
-      primaryClass={cs.CL},
-      url={https://arxiv.org/abs/2410.20771}, 
+    title={MrT5: Dynamic Token Merging for Efficient Byte-level Language Models}, 
+    author={Julie Kallini and Shikhar Murty and Christopher D. Manning and Christopher Potts and Róbert Csordás},
+    year={2024},
+    eprint={2410.20771},
+    archivePrefix={arXiv},
+    primaryClass={cs.CL},
+    url={https://arxiv.org/abs/2410.20771}, 
 }
 ```
 
