@@ -9,8 +9,11 @@ __pycache__/
 *.py[cod]
 *$py.class
 
-# logs
+# logs and result files
 kallini*.out
+runs.md
+eval_results/
+figures/
 
 # C extensions
 *.so

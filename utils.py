@@ -206,12 +206,12 @@ def byt5_compute_metrics(model, input_ids, labels):
     # Return accuracy and 0.0 for percent deleted tokens
     return accuracy, 0.0
 
-def mrt5_compute_metrics(model, input_ids, labels, deletion_threshold):
+def mrt5_compute_metrics(model, input_ids, labels, deletion_threshold, hard_delete=True):
     # Get model outputs
     outputs = model(
         input_ids=input_ids,
         labels=labels,
-        hard_delete=True,
+        hard_delete=hard_delete,
         output_hidden_states=True,
         deletion_threshold=deletion_threshold)
 

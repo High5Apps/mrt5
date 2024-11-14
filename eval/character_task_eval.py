@@ -61,6 +61,7 @@ if __name__ == "__main__":
     # Eval arguments
     parser.add_argument('--per_device_eval_batch_size', type=int,
                         default=64, help='Batch size per device during evaluation.')
+    parser.add_argument('--hard_delete', action='store_true', help='Use hard deletion instead of soft deletion.')
 
 
     args = parser.parse_args()
@@ -80,7 +81,9 @@ if __name__ == "__main__":
     if args.model_type == 'T5':
         metrics_function = byt5_compute_metrics
     elif args.model_type == 'MrT5':
-        metrics_function = partial(mrt5_compute_metrics, deletion_threshold=args.deletion_threshold)
+        metrics_function = partial(mrt5_compute_metrics,
+                                   deletion_threshold=args.deletion_threshold,
+                                   hard_delete=args.hard_delete)
     else:
         raise ValueError(
             "Model type must be 'T5' or 'MrT5'.")
