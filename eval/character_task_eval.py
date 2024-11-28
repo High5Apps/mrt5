@@ -17,6 +17,8 @@ from utils import (
     CHAR_IIT_TASKS_AND_INFO,
     byt5_compute_metrics,
     mrt5_compute_metrics,
+    bpt5_compute_metrics,
+    MODEL_ARCHITECTURES,
 )
 from functools import partial
 
@@ -47,7 +49,7 @@ if __name__ == "__main__":
                         type=str,
                         const='all',
                         nargs='?',
-                        choices=['T5', 'MrT5'],
+                        choices=MODEL_ARCHITECTURES,
                         help='Type of model architecture to evaluate.')
     parser.add_argument("task", type=str, choices=CHAR_IIT_TASKS_AND_INFO.keys(),
                         help="Task to evaluate the model on.")
@@ -84,6 +86,8 @@ if __name__ == "__main__":
         metrics_function = partial(mrt5_compute_metrics,
                                    deletion_threshold=args.deletion_threshold,
                                    hard_delete=args.hard_delete)
+    elif args.model_type == 'BPT5':
+        metrics_function = bpt5_compute_metrics
     else:
         raise ValueError(
             "Model type must be 'T5' or 'MrT5'.")

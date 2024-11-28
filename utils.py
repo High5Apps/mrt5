@@ -5,6 +5,7 @@ import torch
 import json
 from models.modeling_t5 import T5ForConditionalGeneration, T5Config
 from models.modeling_mrt5 import MrT5ForConditionalGeneration, MrT5Config
+from models.modeling_bpt5 import BPT5ForConditionalGeneration, BPT5Config
 from datasets import Dataset, IterableDataset
 
 # Change this path name to the path of the project
@@ -35,7 +36,8 @@ CHAR_IIT_TASKS_AND_INFO = {
 CHAR_IIT_TASKS = list(CHAR_IIT_TASKS_AND_INFO.keys())
 
 MODEL_ARCHITECTURES = ['T5', 'MrT5', 'LogSigmoidMrT5',
-                       'DecoderBaselineT5', 'RandomT5', 'FixedT5']
+                       'DecoderBaselineT5', 'RandomT5', 'FixedT5',
+                       'BPT5']
 
 
 def check_weights(model):
@@ -115,6 +117,8 @@ def load_model_from_path(model_class, model_path=None, model_name=None, training
         model = MrT5ForConditionalGeneration.from_pretrained(model_path)
     elif model_class == "FixedT5":
         model = MrT5ForConditionalGeneration.from_pretrained(model_path)
+    elif model_class == "BPT5":
+        model = BPT5ForConditionalGeneration.from_pretrained(model_path)
     else:
         raise ValueError(
             f"Model type must be one of {', '.join(MODEL_ARCHITECTURES)}.")
@@ -140,6 +144,9 @@ def load_model_from_hf(model_class, model_name, config):
     elif model_class == "FixedT5":
         config.deletion_type = "fixed"
         model = MrT5ForConditionalGeneration.from_pretrained(
+            model_name, config=config)
+    elif model_class == "BPT5":
+        model = BPT5ForConditionalGeneration.from_pretrained(
             model_name, config=config)
     else:
         raise ValueError(
@@ -229,6 +236,25 @@ def mrt5_compute_metrics(model, input_ids, labels, deletion_threshold, hard_dele
 
     # Return cross entropy loss, percent deleted tokens, and new sequence length
     return accuracy, percent_deleted_tokens.item()
+
+def bpt5_compute_metrics(model, input_ids, labels):
+    # Get model outputs
+    outputs = model(
+        input_ids=input_ids,
+        labels=labels,
+        output_hidden_states=True)
+
+    # Calculate sequence accuracy
+    accuracy = __calculate_seq_accuracy(labels, outputs)
+
+    # Count on average how many tokens are deleted
+    hard_boundaries = outputs.hard_boundaries
+    batch_size, seq_len = input_ids.shape[0:2]
+    num_deleted_tokens = torch.sum(hard_boundaries < 1.0).item()
+    percent_deleted_tokens = num_deleted_tokens / (batch_size * seq_len) * 100
+
+    # Return cross entropy loss, percent deleted tokens, and new sequence length
+    return accuracy, percent_deleted_tokens
 
 ALL_LANGUAGES = {
     "af": "Afrikaans",

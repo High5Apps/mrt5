@@ -8,6 +8,7 @@ from utils import (
     SUBSET_LANGUAGES as LANGUAGES,
     get_task_dataset,
     load_model_from_path,
+    MODEL_ARCHITECTURES,
 )
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -61,6 +62,26 @@ def mrt5_compute_loss(model, batch):
     return outputs.loss.item(), percent_deleted_tokens.mean().item(), outputs.encoder_last_hidden_state.shape[1]
 
 
+def bpt5_compute_loss(model, batch):
+    # Get input ids and labels
+    input_ids, labels = get_input_ids_and_labels(batch)
+
+    # Get model outputs
+    outputs = model(
+        input_ids=input_ids,
+        labels=labels,
+        output_hidden_states=True)
+
+    # Count on average how many tokens are deleted
+    hard_boundaries = outputs.hard_boundaries
+    batch_size, seq_len = input_ids.shape[0:2]
+    num_deleted_tokens = torch.sum(hard_boundaries < 1.0).item()
+    percent_deleted_tokens = num_deleted_tokens / (batch_size * seq_len) * 100
+
+    # Return cross entropy loss, percent deleted tokens, and new sequence length
+    return outputs.loss.item(), percent_deleted_tokens, outputs.encoder_last_hidden_state.shape[1]
+
+
 def decoder_baseline_compute_loss(model, batch):
     # Get input ids and labels
     input_ids, labels = get_input_ids_and_labels(batch)
@@ -93,8 +114,6 @@ def load_eval_dataset(language, batch_size):
 
 if __name__ == "__main__":
 
-    MODEL_CHOICES = ['T5', 'MrT5', 'DecoderBaselineT5', 'RandomT5', 'FixedT5']
-
     parser = argparse.ArgumentParser(
         description='Test span corruption evaluation metrics for ByT5/MrT5 models.')
     parser.add_argument('model_name', type=str,
@@ -103,7 +122,7 @@ if __name__ == "__main__":
                         type=str,
                         const='all',
                         nargs='?',
-                        choices=MODEL_CHOICES,
+                        choices=MODEL_ARCHITECTURES,
                         help='Type of model architecture to evaluate.')
     parser.add_argument('--num_batches', type=int,
                         default=1000, help='Number of batches to evaluate.')
@@ -150,9 +169,11 @@ if __name__ == "__main__":
         compute_loss_function = mrt5_compute_loss
     elif args.model_type == 'DecoderBaselineT5':
         compute_loss_function = decoder_baseline_compute_loss
+    elif args.model_type == 'BPT5':
+        compute_loss_function = bpt5_compute_loss
     else:
         raise ValueError(
-            f"Model type must be {', '.join(MODEL_CHOICES)}.")
+            f"Model type must be {', '.join(MODEL_ARCHITECTURES)}.")
 
     print()
 

@@ -17,6 +17,8 @@ from utils import (
     load_model_from_path,
     mrt5_compute_metrics,
     byt5_compute_metrics,
+    bpt5_compute_metrics,
+    MODEL_ARCHITECTURES,
 )
 from data.data_collator_finetuning import XNLIDataCollator
 from functools import partial
@@ -47,8 +49,7 @@ if __name__ == "__main__":
                         type=str,
                         const='all',
                         nargs='?',
-                        choices=['T5', 'MrT5', 'DecoderBaselineT5',
-                                 'RandomT5', 'FixedT5'],
+                        choices=MODEL_ARCHITECTURES,
                         help='Type of model architecture to evaluate.')
     parser.add_argument('--checkpoint', type=int,
                         default=3000, help='Model checkpoint to load for evaluation.')
@@ -83,6 +84,8 @@ if __name__ == "__main__":
         metrics_function = partial(mrt5_compute_metrics,
                                    deletion_threshold=args.deletion_threshold,
                                    hard_delete=args.hard_delete)
+    elif args.model_type == 'BPT5':
+        metrics_function = bpt5_compute_metrics
     else:
         raise ValueError(
             "Model type must be 'T5' or 'MrT5'.")

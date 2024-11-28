@@ -22,11 +22,13 @@ from trainer import (
     MrT5TrainingArguments,
     DecoderBaselineT5Trainer,
     BaselineMrT5Trainer,
+    BPT5Trainer,
 )
 from datasets import load_dataset
 from data.data_collator_finetuning import XNLIDataCollator
 from models.modeling_mrt5 import MrT5Config
 from models.modeling_t5 import T5Config
+from models.modeling_bpt5 import BPT5Config
 from transformers import AutoTokenizer
 import math
 import numpy as np
@@ -167,6 +169,15 @@ if __name__ == "__main__":
     # FixedT5 specific arguments
     parser.add_argument('--fixed_deletion_amount', type=float, default=0.5,
                         help='Amount of deletion for fixed deletion baseline (FixedT5 model only).')
+    
+    # BPT5 specific arguments
+    parser.add_argument('--boundary_predictor_layer', type=int, default=2,
+                        help='Layer to add boundary predictor after.')
+    parser.add_argument('--boundary_predictor_type', type=str, default='gumbel',
+                        help='Type of boundary predictor to use.')
+    parser.add_argument('--temperature', type=float, default=0.5,
+                        help='Temperature for boundary predictor.')
+    parser.add_argument('--prior', type=float, default=0.2)
 
     args = parser.parse_args()
 
@@ -235,6 +246,14 @@ if __name__ == "__main__":
             sigmoid_mask_scale=args.sigmoid_mask_scale,
             deletion_threshold=args.deletion_threshold,
             delete_gate_layer=args.delete_gate_layer,
+        )
+    elif args.model_type == 'BPT5':
+        t5_config = BPT5Config.from_pretrained(
+            args.model_name,
+            boundary_predictor_layer=args.boundary_predictor_layer,
+            boundary_predictor_type=args.boundary_predictor_type,
+            temperature=args.temperature,
+            prior=args.prior,
         )
     else:
         raise ValueError(
@@ -383,6 +402,15 @@ if __name__ == "__main__":
         )
     elif args.model_type == 'T5':
         trainer = T5Trainer(
+            model=model,
+            tokenizer=tokenizer,
+            args=training_args,                     # training arguments, defined above
+            train_dataset=train_dataset,            # training dataset
+            eval_dataset=eval_dataset,              # evaluation dataset
+            data_collator=collator,                 # the custom data collator
+        )
+    elif args.model_type == 'BPT5':
+        trainer = BPT5Trainer(
             model=model,
             tokenizer=tokenizer,
             args=training_args,                     # training arguments, defined above

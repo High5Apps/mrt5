@@ -510,13 +510,6 @@ class BaselineMrT5Trainer(T5Trainer):
         num_deleted_tokens = ((delete_gate_output < self.deletion_threshold) & non_pad_mask).sum()
         percent_non_pad_deleted_tokens = num_deleted_tokens / num_non_pad_tokens * 100
 
-        # Count on average how many tokens are deleted, excluding pad tokens
-        batch_size, seq_len = input_ids.shape[0:2]
-        non_pad_mask = input_ids != 0
-        num_non_pad_tokens = non_pad_mask.sum()
-        num_deleted_tokens = ((delete_gate_output < self.deletion_threshold) & non_pad_mask).sum()
-        percent_non_pad_deleted_tokens = num_deleted_tokens / num_non_pad_tokens * 100
-
         # Total loss
         loss = cross_entropy_loss
 
@@ -594,4 +587,93 @@ class DecoderBaselineT5Trainer(T5Trainer):
         self.metrics[f"{eval_flag}cross_entropy_loss"].append(
             loss.detach().item())
 
+        return (loss, outputs) if return_outputs else loss
+
+
+class BPT5Trainer(T5Trainer):
+    def __init__(
+        self,
+        model=None,
+        args=None,
+        data_collator=None,
+        train_dataset=None,
+        eval_dataset=None,
+        tokenizer=None,
+        model_init=None,
+        compute_metrics=None,
+        callbacks=None,
+        optimizers=(None, None),
+        preprocess_logits_for_metrics=None,
+        include_edit_distance=False,
+        random_seed=None,
+    ):
+        super().__init__(
+            model,
+            args,
+            data_collator,
+            train_dataset,
+            eval_dataset,
+            tokenizer,
+            model_init,
+            compute_metrics,
+            callbacks,
+            optimizers,
+            preprocess_logits_for_metrics,
+        )
+
+    def init_metrics(self):
+        metrics = {
+            "cross_entropy_loss": [],
+            "boundaries_loss": [],
+            "prediction_seq_accuracy": [],
+            "prediction_token_accuracy": [],
+            "percent_deleted_tokens": [],
+            "new_seq_len": [],
+            "eval_cross_entropy_loss": [],
+            "eval_boundaries_loss": [],
+            "eval_prediction_seq_accuracy": [],
+            "eval_prediction_token_accuracy": [],
+            "eval_percent_deleted_tokens": [],
+            "eval_new_seq_len": [],
+        }
+        return metrics
+    
+    def compute_loss(self, model, inputs, return_outputs=False):
+        input_ids = inputs.pop("input_ids")
+        labels = inputs.pop("labels")
+        outputs = model(input_ids=input_ids, labels=labels,
+                        output_hidden_states=True)
+
+        loss = outputs.loss
+        loss_boundaries = outputs.loss_boundaries
+        prediction_seq_accuracy = self.calculate_seq_accuracy(labels, outputs)
+        prediction_token_accuracy = self.calculate_token_accuracy(labels, outputs)
+
+        # Count on average how many tokens are deleted
+        hard_boundaries = outputs.hard_boundaries
+        batch_size, seq_len = input_ids.shape[0:2]
+        num_deleted_tokens = torch.sum(hard_boundaries < 1.0).item()
+        percent_deleted_tokens = num_deleted_tokens / (batch_size * seq_len) * 100
+
+        # Flag for logging training vs. evaluation metrics
+        eval_flag = "" if model.training else "eval_"
+        self.metrics[f"{eval_flag}cross_entropy_loss"].append(
+            loss.detach().item())
+        self.metrics[f"{eval_flag}boundaries_loss"].append(
+            loss_boundaries.detach().item())
+        self.metrics[f"{eval_flag}prediction_seq_accuracy"].append(
+            prediction_seq_accuracy)
+        self.metrics[f"{eval_flag}prediction_token_accuracy"].append(
+            prediction_token_accuracy)
+        self.metrics[f"{eval_flag}new_seq_len"].append(
+                outputs.encoder_last_hidden_state.shape[1])
+        self.metrics[f"{eval_flag}percent_deleted_tokens"].append(
+            percent_deleted_tokens)
+
+        # Compute the edit distance
+        if not model.training and self.include_edit_distance:
+            self.metrics[f"eval_edit_distance"].append(
+                self.calculate_edit_distance(labels, outputs))
+
+        loss = loss + loss_boundaries
         return (loss, outputs) if return_outputs else loss

@@ -1,6 +1,11 @@
+# modeling_mrt5.py
+# Author: Julie Kallini
+# Description: This file contains the implementation of the MrT5 model.
+# The code is adapted from HuggingFace's modeling_t5.py. New code sequences
+# are labeled with comments.
+
 import torch
 import copy
-import json
 import numpy as np
 from torch import nn
 from models.modeling_t5 import (
