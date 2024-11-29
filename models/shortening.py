@@ -71,24 +71,3 @@ def downsample(boundaries, hidden):
     shortened_hidden = torch.einsum('lbd,bls->sbd', hidden, bar)
 
     return shortened_hidden
-
-
-def upsample(boundaries, shortened_hidden):
-    """
-        Upsampling
-
-        - The first element of boundaries tensor is always 0 and doesn't matter
-        - 1 starts a new group
-        - i-th group can be upsampled only to the tokens from (i+1)-th group, otherwise there's a leak
-
-        Input:
-            boundaries: B x L
-            shortened_hidden: S x B x D
-        Output:
-            upsampled_hidden: L x B x D
-    """
-
-    foo = common(boundaries, upsample=True)  # B x L x S
-    bar = final(foo, upsample=True)  # B x L x S
-
-    return torch.einsum('sbd,bls->lbd', shortened_hidden, bar)
