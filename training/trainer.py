@@ -83,15 +83,20 @@ class T5Trainer(Trainer):
             ref, pred) for ref, pred in zip(target_texts, predicted_texts)]
         average_edit_distance = sum(edit_distances) / len(edit_distances)
         return average_edit_distance
-    
+
     def calculate_seq_accuracy(self, labels, outputs):
         logits = outputs.logits
         # Get the predicted IDs
         predicted_ids = torch.argmax(logits, dim=-1)
 
-        # Compare predicted_ids with the true labels
-        correct_predictions = (predicted_ids == labels).all(dim=-1).sum().item()
-        total_predictions = labels.shape[0]
+        # Mask out the negative values in labels (assumed to be padding tokens)
+        mask = labels >= 0  # Only consider tokens where labels are non-negative
+        masked_labels = labels[mask]
+        masked_predictions = predicted_ids[mask]
+
+        # Compare masked predictions with the true labels
+        correct_predictions = (masked_predictions == masked_labels).all(dim=-1).sum().item()
+        total_predictions = mask.sum().item()  # Count non-padding tokens
 
         # Calculate accuracy
         accuracy = correct_predictions / total_predictions
@@ -103,24 +108,33 @@ class T5Trainer(Trainer):
         # Get the predicted IDs
         predicted_ids = torch.argmax(logits, dim=-1)
 
-        # Compare predicted_ids with the true labels
-        correct_predictions = (predicted_ids == labels).sum().item()
+        # Mask out the negative values in labels (assumed to be padding tokens)
+        mask = labels >= 0  # Only consider tokens where labels are non-negative
+        masked_labels = labels[mask]
+        masked_predictions = predicted_ids[mask]
+
+        # Compare masked predictions with the true labels
+        correct_predictions = (masked_predictions == masked_labels).sum().item()
 
         # Calculate accuracy
-        total_predictions = labels.numel()
-        accuracy = correct_predictions / total_predictions
+        total_tokens = mask.sum().item()  # Count non-padding tokens
+        accuracy = correct_predictions / total_tokens if total_tokens > 0 else 0.0
 
         return accuracy
 
+
     def compute_loss(self, model, inputs, return_outputs=False):
         input_ids = inputs.pop("input_ids")
+        attention_mask = inputs.pop(
+            "attention_mask") if "attention_mask" in inputs else None
         labels = inputs.pop("labels")
-        outputs = model(input_ids=input_ids, labels=labels,
-                        output_hidden_states=True)
+        outputs = model(input_ids=input_ids, attention_mask=attention_mask,
+                        labels=labels, output_hidden_states=True)
 
         loss = outputs.loss
         prediction_seq_accuracy = self.calculate_seq_accuracy(labels, outputs)
-        prediction_token_accuracy = self.calculate_token_accuracy(labels, outputs)
+        prediction_token_accuracy = self.calculate_token_accuracy(
+            labels, outputs)
 
         # Flag for logging training vs. evaluation metrics
         eval_flag = "" if model.training else "eval_"
@@ -284,7 +298,8 @@ class MrT5Trainer(T5Trainer):
         elif self.loss_function == "logits_mean":
             delete_gate_loss = delete_gate_logits[non_pad_mask].mean()
         elif self.loss_function == "gate_var_loss":
-            delete_gate_loss = -delete_gate_output[non_pad_mask].var(dim=0).mean()
+            delete_gate_loss = - \
+                delete_gate_output[non_pad_mask].var(dim=0).mean()
         else:
             raise ValueError("Invalid loss function.")
         delete_gate_loss *= self.delete_gate_loss_coeff
@@ -305,13 +320,15 @@ class MrT5Trainer(T5Trainer):
         batch_size, seq_len = input_ids.shape[0:2]
         num_deleted_tokens = (delete_gate_output <
                               self.deletion_threshold).sum()
-        percent_deleted_tokens = num_deleted_tokens / (batch_size * seq_len) * 100
+        percent_deleted_tokens = num_deleted_tokens / \
+            (batch_size * seq_len) * 100
 
         # Count on average how many tokens are deleted, excluding pad tokens
         batch_size, seq_len = input_ids.shape[0:2]
         non_pad_mask = input_ids != 0
         num_non_pad_tokens = non_pad_mask.sum()
-        num_deleted_tokens = ((delete_gate_output < self.deletion_threshold) & non_pad_mask).sum()
+        num_deleted_tokens = (
+            (delete_gate_output < self.deletion_threshold) & non_pad_mask).sum()
         percent_non_pad_deleted_tokens = num_deleted_tokens / num_non_pad_tokens * 100
 
         if self.regularizer_delay is not None and self.state.global_step < self.regularizer_delay:
@@ -344,7 +361,7 @@ class MrT5Trainer(T5Trainer):
             self.metrics[f"{metrics_prefix}delete_gate_loss_coeff"].append(
                 self.delete_gate_loss_coeff)
 
-        if log_attn_metrics:  
+        if log_attn_metrics:
             # Get encoder attention logs
             layer = self.model.config.delete_gate_layer+1
             (encoder_attn_scores_pre_gate,
@@ -365,10 +382,13 @@ class MrT5Trainer(T5Trainer):
 
     def compute_loss(self, model, inputs, return_outputs=False):
         input_ids = inputs.pop("input_ids")
+        attention_mask = inputs.pop(
+            "attention_mask") if "attention_mask" in inputs else None
         labels = inputs.pop("labels")
         if model.training:
             # Log training metrics
             outputs = model(input_ids=input_ids, labels=labels,
+                            attention_mask=attention_mask,
                             output_hidden_states=True, output_attn_logs=True,
                             hard_delete=self.rng.random() < self.hard_delete_train_prob)
             loss, cross_entropy_loss, delete_gate_output = self.__compute_loss(
@@ -379,7 +399,7 @@ class MrT5Trainer(T5Trainer):
                 loss.detach().item())
             self.metrics["delete_gate_histogram"].append(
                 delete_gate_output.detach().cpu().numpy().flatten().tolist())
-            
+
             # Log prediction accuracy
             self.metrics["prediction_seq_accuracy"].append(
                 self.calculate_seq_accuracy(labels, outputs))
@@ -388,6 +408,7 @@ class MrT5Trainer(T5Trainer):
         else:
             # Log losses for soft deletion
             outputs = model(input_ids=input_ids, labels=labels,
+                            attention_mask=attention_mask,
                             output_hidden_states=True, output_attn_logs=True,
                             hard_delete=False)
             loss, cross_entropy_loss, _ = self.__compute_loss(
@@ -396,7 +417,7 @@ class MrT5Trainer(T5Trainer):
                 cross_entropy_loss.detach().item())
             self.metrics["eval_soft_total_loss"].append(
                 loss.detach().item())
-            
+
             # Log prediction accuracy
             self.metrics["eval_soft_prediction_seq_accuracy"].append(
                 self.calculate_seq_accuracy(labels, outputs))
@@ -409,6 +430,7 @@ class MrT5Trainer(T5Trainer):
 
             # Log losses for hard deletion + other eval metrics
             outputs = model(input_ids=input_ids, labels=labels,
+                            attention_mask=attention_mask,
                             output_hidden_states=True, hard_delete=True)
             loss, cross_entropy_loss, _ = self.__compute_loss(
                 outputs, input_ids, log_deletion_metrics=True, metrics_prefix="eval_")
@@ -484,8 +506,11 @@ class BaselineMrT5Trainer(T5Trainer):
 
     def compute_loss(self, model, inputs, return_outputs=False):
         input_ids = inputs.pop("input_ids")
+        attention_mask = inputs.pop(
+            "attention_mask") if "attention_mask" in inputs else None
         labels = inputs.pop("labels")
         outputs = model(input_ids=input_ids, labels=labels,
+                        attention_mask=attention_mask,
                         output_hidden_states=True)
 
         # Flag for logging training vs. evaluation metrics
@@ -501,13 +526,15 @@ class BaselineMrT5Trainer(T5Trainer):
         batch_size, seq_len = input_ids.shape[0:2]
         num_deleted_tokens = (delete_gate_output <
                               model.config.sigmoid_mask_scale / 2).sum()
-        percent_deleted_tokens = num_deleted_tokens / (batch_size * seq_len) * 100
+        percent_deleted_tokens = num_deleted_tokens / \
+            (batch_size * seq_len) * 100
 
         # Count on average how many tokens are deleted, excluding pad tokens
         batch_size, seq_len = input_ids.shape[0:2]
         non_pad_mask = input_ids != 0
         num_non_pad_tokens = non_pad_mask.sum()
-        num_deleted_tokens = ((delete_gate_output < self.deletion_threshold) & non_pad_mask).sum()
+        num_deleted_tokens = (
+            (delete_gate_output < self.deletion_threshold) & non_pad_mask).sum()
         percent_non_pad_deleted_tokens = num_deleted_tokens / num_non_pad_tokens * 100
 
         # Total loss
@@ -637,23 +664,28 @@ class BPT5Trainer(T5Trainer):
             "eval_new_seq_len": [],
         }
         return metrics
-    
+
     def compute_loss(self, model, inputs, return_outputs=False):
         input_ids = inputs.pop("input_ids")
+        attention_mask = inputs.pop(
+            "attention_mask") if "attention_mask" in inputs else None
         labels = inputs.pop("labels")
         outputs = model(input_ids=input_ids, labels=labels,
+                        attention_mask=attention_mask,
                         output_hidden_states=True)
 
         loss = outputs.loss
         loss_boundaries = outputs.loss_boundaries
         prediction_seq_accuracy = self.calculate_seq_accuracy(labels, outputs)
-        prediction_token_accuracy = self.calculate_token_accuracy(labels, outputs)
+        prediction_token_accuracy = self.calculate_token_accuracy(
+            labels, outputs)
 
         # Count on average how many tokens are deleted
         hard_boundaries = outputs.hard_boundaries
         batch_size, seq_len = input_ids.shape[0:2]
         num_deleted_tokens = torch.sum(hard_boundaries < 1.0).item()
-        percent_deleted_tokens = num_deleted_tokens / (batch_size * seq_len) * 100
+        percent_deleted_tokens = num_deleted_tokens / \
+            (batch_size * seq_len) * 100
 
         # Flag for logging training vs. evaluation metrics
         eval_flag = "" if model.training else "eval_"
@@ -666,7 +698,7 @@ class BPT5Trainer(T5Trainer):
         self.metrics[f"{eval_flag}prediction_token_accuracy"].append(
             prediction_token_accuracy)
         self.metrics[f"{eval_flag}new_seq_len"].append(
-                outputs.encoder_last_hidden_state.shape[1])
+            outputs.encoder_last_hidden_state.shape[1])
         self.metrics[f"{eval_flag}percent_deleted_tokens"].append(
             percent_deleted_tokens)
 

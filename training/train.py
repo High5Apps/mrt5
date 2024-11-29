@@ -38,13 +38,37 @@ import os
 
 
 class PassthroughDataCollator:
+    def __init__(self, pad_token_id=0):
+        """
+        Initialize the data collator with a specified pad token ID.
+
+        Args:
+            pad_token_id (int): The token ID used for padding. Default is 0.
+        """
+        self.pad_token_id = pad_token_id
+
     def __call__(self, batch):
         input_ids = torch.tensor([example['input_ids']
                                  for example in batch], dtype=torch.long).squeeze(1)
         labels = torch.tensor([example['labels']
                               for example in batch], dtype=torch.long).squeeze(1)
-        return {'input_ids': input_ids, 'labels': labels}
 
+        # Replace pad token IDs in labels with -100
+        labels[labels == self.pad_token_id] = -100
+
+        if 'attention_mask' in batch[0]:
+            attention_mask = torch.tensor([example['attention_mask']
+                                           for example in batch], dtype=torch.long).squeeze(1)
+            return {
+                'input_ids': input_ids,
+                'attention_mask': attention_mask,
+                'labels': labels
+            }
+
+        return {
+            'input_ids': input_ids,
+            'labels': labels
+        }
 
 if __name__ == "__main__":
 
@@ -320,14 +344,14 @@ if __name__ == "__main__":
     if args.training_task in CHAR_IIT_TASKS:
         train_dataset = get_task_dataset(args.training_task, split="train", iterable_dataset=False)
         eval_dataset = get_task_dataset(args.training_task, split="validation", iterable_dataset=False)
-        collator = PassthroughDataCollator()
+        collator = PassthroughDataCollator(tokenizer.pad_token_id)
     elif args.training_task not in FINETUNE_TASKS:
         train_dataset = get_task_dataset(
             args.training_task, "train", iterable_dataset=True)
         eval_dataset = get_task_dataset(
             args.training_task, "validation", iterable_dataset=True)
         # Initialize the data collator
-        collator = PassthroughDataCollator()
+        collator = PassthroughDataCollator(tokenizer.pad_token_id)
     elif args.training_task == 'xnli':
         train_dataset = load_dataset("xnli", "en", split="train").shuffle(seed=args.random_seed)
         eval_dataset = load_dataset("xnli", "en", split="validation").shuffle(seed=args.random_seed)

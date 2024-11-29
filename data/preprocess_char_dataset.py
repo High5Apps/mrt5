@@ -33,6 +33,7 @@ class CharacterTaskDataCollator:
 
         batch = {}
         batch['input_ids'] = inputs_batch["input_ids"]
+        batch['attention_mask'] = inputs_batch["attention_mask"]
         batch['labels'] = labels_batch["input_ids"]
 
         return batch
@@ -50,6 +51,7 @@ def preprocess_dataset(dataset, collator):
         processed_example = collator([example])
         yield {
             'input_ids': processed_example['input_ids'].tolist(),
+            'attention_mask': processed_example['attention_mask'].tolist(),
             'labels': processed_example['labels'].tolist(),
         }
 

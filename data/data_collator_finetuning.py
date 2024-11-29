@@ -15,7 +15,7 @@ class XNLIDataCollator:
         label_texts = []
 
         for feature in features:
-            input_text = f"P: {feature['premise']} H: {feature['hypothesis']}"
+            input_text = f"Premise: {feature['premise']} Hypothesis: {feature['hypothesis']}"
             label_text = self.label_map[feature['label']]
             input_texts.append(input_text)
             label_texts.append(label_text)
@@ -28,6 +28,7 @@ class XNLIDataCollator:
 
         batch = {}
         batch['input_ids'] = inputs_batch["input_ids"]
+        batch['attention_mask'] = inputs_batch["attention_mask"]
         batch['labels'] = labels_batch["input_ids"]
 
         return batch
