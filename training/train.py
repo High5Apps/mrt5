@@ -134,6 +134,7 @@ if __name__ == "__main__":
     parser.add_argument('--checkpoint', type=str, default=None,
                         help='Checkpoint to load from model path.')
     parser.add_argument('--resume_from_checkpoint', action='store_true')
+    parser.add_argument('--lr_scheduler_type', type=str, default='linear')
 
     # Model arguments for training from scratch
     parser.add_argument('--absolute_pos_embeds', action='store_true',
@@ -372,6 +373,7 @@ if __name__ == "__main__":
         eval_steps=args.eval_steps,
         num_train_epochs=args.num_train_epochs,
         learning_rate=args.learning_rate,
+        lr_scheduler_type=args.lr_scheduler_type,
         do_train=True,
         do_eval=True,
         evaluation_strategy="steps",
