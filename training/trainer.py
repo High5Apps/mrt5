@@ -89,14 +89,13 @@ class T5Trainer(Trainer):
         # Get the predicted IDs
         predicted_ids = torch.argmax(logits, dim=-1)
 
-        # Mask out the negative values in labels (assumed to be padding tokens)
-        mask = labels >= 0  # Only consider tokens where labels are non-negative
-        masked_labels = labels[mask]
-        masked_predictions = predicted_ids[mask]
+        # Don't count indices of pad tokens as incorrect predictions
+        pad_tokens = labels <= 0
+        correct_tokens = (predicted_ids == labels) | pad_tokens
 
-        # Compare masked predictions with the true labels
-        correct_predictions = (masked_predictions == masked_labels).all(dim=-1).sum().item()
-        total_predictions = mask.sum().item()  # Count non-padding tokens
+        # Compare predicted_ids with the true labels
+        correct_predictions = correct_tokens.all(dim=-1).sum().item()
+        total_predictions = labels.shape[0]
 
         # Calculate accuracy
         accuracy = correct_predictions / total_predictions
@@ -108,17 +107,19 @@ class T5Trainer(Trainer):
         # Get the predicted IDs
         predicted_ids = torch.argmax(logits, dim=-1)
 
-        # Mask out the negative values in labels (assumed to be padding tokens)
-        mask = labels >= 0  # Only consider tokens where labels are non-negative
-        masked_labels = labels[mask]
-        masked_predictions = predicted_ids[mask]
+        # Don't count indices of pad tokens as incorrect predictions
+        pad_tokens = labels <= 0
+        num_pad_tokens = pad_tokens.sum().item()
 
-        # Compare masked predictions with the true labels
-        correct_predictions = (masked_predictions == masked_labels).sum().item()
+        # Compare predicted_ids with the true labels
+        correct_tokens = (predicted_ids == labels) | pad_tokens
+
+        # Compare predicted_ids with the true labels
+        correct_predictions = correct_tokens.sum().item() - num_pad_tokens
 
         # Calculate accuracy
-        total_tokens = mask.sum().item()  # Count non-padding tokens
-        accuracy = correct_predictions / total_tokens if total_tokens > 0 else 0.0
+        total_predictions = labels.numel() - num_pad_tokens
+        accuracy = correct_predictions / total_predictions
 
         return accuracy
 
