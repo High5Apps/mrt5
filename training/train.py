@@ -15,7 +15,6 @@ from utils import (
     load_model_from_scratch,
     load_model_from_path,
 )
-from pprint import pprint
 from trainer import (
     T5Trainer,
     MrT5Trainer,
@@ -35,6 +34,7 @@ import numpy as np
 import torch
 import argparse
 import os
+from accelerate import Accelerator
 
 
 class PassthroughDataCollator:
@@ -213,6 +213,9 @@ if __name__ == "__main__":
     else:
         os.environ["WANDB_PROJECT"] = "mrt5"
 
+    # Initialize the accelerator
+    accelerator = Accelerator()
+
     # Set the random seed for reproducibility
     torch.manual_seed(args.random_seed)
     np.random.seed(args.random_seed)
@@ -231,9 +234,9 @@ if __name__ == "__main__":
         raise ValueError(
             "Cannot train from scratch and load from path simultaneously.")
 
-    print("Loading model and tokenizer...")
+    accelerator.print("Loading model and tokenizer...")
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)
-    print("Model type:", args.model_type)
+    accelerator.print("Model type:", args.model_type)
 
     # Initialize the configuration
     if args.model_type in ('T5', 'DecoderBaselineT5'):
@@ -299,7 +302,7 @@ if __name__ == "__main__":
         t5_config.has_absolute_position_embeddings = False
 
     if args.train_from_scratch:
-        print("Training from scratch...")
+        accelerator.print("Training from scratch...")
         model = load_model_from_scratch(args.model_type, t5_config)
         # Apply layer scaling to encoder and decoder independently
         model.encoder.apply(lambda module: model._init_weights(
@@ -307,27 +310,28 @@ if __name__ == "__main__":
         model.decoder.apply(lambda module: model._init_weights(
             module, 1 / math.sqrt(model.config.num_decoder_layers)))
     elif args.model_path is not None:
-        print("Loading model from path...")
+        accelerator.print("Loading model from path...")
         model = load_model_from_path(
             model_class=args.model_type,
             model_path=args.model_path,
         )
     else:
-        print("Loading model from Hugging Face...")
+        accelerator.print("Loading model from Hugging Face...")
         model = load_model_from_hf(args.model_type, args.model_name, t5_config)
 
     total_params = model.num_parameters()
     trainable_params = sum(p.numel()
                            for p in model.parameters() if p.requires_grad)
 
-    print(f"Total parameters: {total_params}")
-    print(f"Trainable parameters: {trainable_params}")
+    accelerator.print(f"Total parameters: {total_params}")
+    accelerator.print(f"Trainable parameters: {trainable_params}")
 
     # Calculate appropriate gradient accumulation steps for effective batch size
-    gradient_accumulation_steps = args.effective_batch_size // args.per_device_train_batch_size
-    print(f"Effective batch size: {args.effective_batch_size}")
-    print(f"Per-device batch size: {args.per_device_train_batch_size}")
-    print(f"Gradient accumulation steps: {gradient_accumulation_steps}")
+    gradient_accumulation_steps = args.effective_batch_size // (args.per_device_train_batch_size * accelerator.num_processes)
+    accelerator.print(f"Num devices: {accelerator.num_processes}")
+    accelerator.print(f"Effective batch size: {args.effective_batch_size}")
+    accelerator.print(f"Per-device batch size: {args.per_device_train_batch_size}")
+    accelerator.print(f"Gradient accumulation steps: {gradient_accumulation_steps}")
 
     run_name = args.run_name if args.run_name else f"{args.model_type}_{args.model_name.split('/')[-1]}_seed{args.random_seed}"
     result_dir = f"{CHECKPOINT_PATH}/{args.training_task}/{args.model_type}/{run_name}_seed{args.random_seed}"
@@ -337,9 +341,6 @@ if __name__ == "__main__":
         os.makedirs(checkpoint_dir)
     if not os.path.exists(log_dir):
         os.makedirs(log_dir)
-
-    print("Model Config:")
-    pprint(model.config)
 
     # Format the dataset path based on the training task
     if args.training_task in CHAR_IIT_TASKS:
@@ -388,9 +389,6 @@ if __name__ == "__main__":
         entropy_reg_coeff_1=args.entropy_reg_coeff_1,
         entropy_reg_coeff_2=args.entropy_reg_coeff_2,
     )
-
-    print("Training arguments:")
-    pprint(training_args.to_dict())
 
     # Initialize the Trainer
     if args.model_type in ('MrT5', 'LogSigmoidMrT5'):
