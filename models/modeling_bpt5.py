@@ -35,7 +35,7 @@ logger = logging.get_logger(__name__)
 class BPT5BaseModelOutputWithPastAndCrossAttentions(BaseModelOutputWithPastAndCrossAttentions):
     loss_boundaries: torch.FloatTensor = None
     hard_boundaries: torch.FloatTensor = None
-
+    attention_mask: torch.FloatTensor = None
 
 @dataclass
 class BPT5Seq2SeqLMOutput(Seq2SeqLMOutput):
@@ -218,8 +218,6 @@ class BPT5Block(nn.Module):
         #### NEW CODE ####
 
     def __get_new_positions_and_mask(self, batch_size, seq_len, boundaries, device):
-        boundaries[:, 0] = 1.0
-
         # Create filter from boundaries
         keep_this = boundaries > 0.0
 
@@ -358,18 +356,19 @@ class BPT5Block(nn.Module):
 
         ##### NEW CODE #####
         if self.has_boundary_predictor:
+
+            # Zero out hidden states corresponding to padding tokens
+            pad_token_mask = attention_mask.squeeze(-2).squeeze(-2).unsqueeze(-1) < 0
+            hidden_states = hidden_states * (~pad_token_mask)
+
             hidden_states_permuted = hidden_states.permute(1, 0, 2)
 
             # Apply boundary predictor to hidden states
             _, hard_boundaries = self.boundary_predictor(self.down_ln(hidden_states_permuted))
 
-            # Deletion indices
-            ones_column = torch.ones(hard_boundaries.size(0), 1).to(hidden_states.device)
-            keep_this = torch.cat((ones_column, hard_boundaries[:, :-1]), dim=1)
-
             # Compute new token positions
             new_positions = self.__get_new_positions_and_mask(
-                hidden_states.size(0), hidden_states.size(1), keep_this, hidden_states.device)
+                hidden_states.size(0), hidden_states.size(1), hard_boundaries, hidden_states.device)
             
             # Compute new position bias
             if position_bias is not None:
@@ -405,7 +404,7 @@ class BPT5Block(nn.Module):
 
         #### NEW CODE ####
         if self.has_boundary_predictor:
-            outputs = outputs + (loss_boundaries, hard_boundaries)
+            outputs = outputs + (loss_boundaries, hard_boundaries, attention_mask)
         #### NEW CODE ####
 
         return outputs
@@ -434,7 +433,7 @@ class BPT5Stack(T5Stack):
                         # Only the first layer has relative attention bias
                         has_relative_attention_bias=bool(i == 0),
                         # Add delete gate if specified
-                        has_boundary_predictor=bool(i == config.boundary_predictor_layer),
+                        has_boundary_predictor=bool(i == (config.boundary_predictor_layer+1)),
                     )
                 )
             self.block = nn.ModuleList(blocks)
@@ -533,6 +532,11 @@ class BPT5Stack(T5Stack):
                 )
                 use_cache = False
 
+        #### NEW CODE ####
+        # Return a new encoder attention mask if hard delete is enabled
+        attention_mask_to_return = None
+        #### NEW CODE ####
+
         # Prepare head mask if needed
         head_mask = self.get_head_mask(head_mask, self.config.num_layers)
         cross_attn_head_mask = self.get_head_mask(
@@ -617,7 +621,10 @@ class BPT5Stack(T5Stack):
             #### NEW CODE ####
             # Get the loss boundaries if the layer has a boundary predictor
             if layer_module.has_boundary_predictor:
-                loss_boundaries, hard_boundaries = layer_outputs[-2], layer_outputs[-1]
+                loss_boundaries, hard_boundaries, extended_attention_mask = layer_outputs[-3], layer_outputs[-2], layer_outputs[-1]
+                attention_mask_to_return = extended_attention_mask.squeeze(-2).squeeze(-2)
+                attention_mask_to_return = (attention_mask_to_return == 0).int()
+
             #### NEW CODE ####
 
             # layer_outputs is a tuple with:
@@ -677,6 +684,7 @@ class BPT5Stack(T5Stack):
             #### NEW CODE ####
             loss_boundaries=loss_boundaries,
             hard_boundaries=hard_boundaries,
+            attention_mask=attention_mask_to_return,
             #### NEW CODE ####
         )
 
@@ -740,15 +748,18 @@ class BPT5ForConditionalGeneration(T5ForConditionalGeneration):
         elif return_dict and not isinstance(encoder_outputs, BaseModelOutput):
             #### NEW CODE ####
             encoder_outputs = BPT5BaseModelOutputWithPastAndCrossAttentions(
-                last_hidden_state=encoder_outputs[0],
-                hidden_states=encoder_outputs[1] if len(
-                    encoder_outputs) > 1 else None,
-                attentions=encoder_outputs[2] if len(
-                    encoder_outputs) > 2 else None,
+                last_hidden_state=encoder_outputs.last_hidden_state,
+                hidden_states=encoder_outputs.hidden_states if 'hidden_states' in encoder_outputs else None,
+                attentions=encoder_outputs.attentions if 'attentions' in encoder_outputs else None,
             )
             #### NEW CODE ####
 
-        hidden_states = encoder_outputs[0]
+        #### NEW CODE ####
+
+        hidden_states = encoder_outputs.last_hidden_state
+        attention_mask = encoder_outputs.attention_mask
+        
+        #### NEW CODE ####
 
         if self.model_parallel:
             torch.cuda.set_device(self.decoder.first_device)

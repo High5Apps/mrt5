@@ -67,6 +67,7 @@ class MrT5BaseModelOutputWithPastAndCrossAttentions(BaseModelOutputWithPastAndCr
     delete_gate_logits: torch.FloatTensor = None
     attn_logs: torch.FloatTensor = None
     cross_attention_attn_logs: torch.FloatTensor = None
+    attention_mask: torch.FloatTensor = None
 
 
 @dataclass
@@ -363,7 +364,7 @@ class MrT5Attention(T5Attention):
         # If there is no position bias, add attention mask to scores directly
         elif mask is not None:
             scores += mask
-
+        
         # Create attention logs, log attention scores before applying gate mask
         attn_logs = (scores.detach().clone(),)
 
@@ -572,35 +573,6 @@ class MrT5Block(nn.Module):
         #### NEW CODE ####
 
     #### NEW CODE ####
-    def __hard_delete_old(self, tensor, delete_gate_mask, deletion_threshold=None, compute_new_mask=False):
-        # Create filter from delete gate mask
-        deletion_threshold = deletion_threshold if deletion_threshold is not None else self.deletion_threshold
-        delete_filter = delete_gate_mask > deletion_threshold
-
-        # Apply filter to tensor
-        filtered = [t[f.squeeze(1)] for t, f in zip(tensor, delete_filter)]
-
-        # Find the maximum sequence length after filtering
-        max_seq_len = max(t.shape[0] for t in filtered)
-
-        # Calculate appropriate padding
-        pad = [0 for _ in range((len(tensor.shape)-1) * 2 - 1)]
-
-        # Pad each item in the filtered tensor to have the same sequence length
-        padded = torch.stack([nn.functional.pad(
-            t, tuple(pad) + (max_seq_len - t.shape[0],)) for t in filtered]).to(tensor.device)
-
-        if compute_new_mask:
-            new_delete_gate_mask = [torch.zeros(
-                h.shape[0]) for h in filtered]
-            new_delete_gate_mask = torch.stack([nn.functional.pad(
-                m, (0, max_seq_len - m.shape[0]), value=-1e9) for m in new_delete_gate_mask])
-            new_delete_gate_mask = new_delete_gate_mask.unsqueeze(
-                -1).to(delete_gate_mask.device)
-        else:
-            new_delete_gate_mask = None
-
-        return padded, new_delete_gate_mask
     
     def __get_new_positions_and_mask(self, batch_size, seq_len, delete_gate_mask, deletion_threshold, device):
         delete_gate_mask = delete_gate_mask.squeeze(-1)
@@ -688,7 +660,7 @@ class MrT5Block(nn.Module):
             # Compute new token positions
             new_positions, delete_gate_mask = self.__get_new_positions_and_mask(
                 hidden_states.size(0), hidden_states.size(1), delete_gate_mask, deletion_threshold, hidden_states.device)
-            
+
             # Compute new position bias
             if position_bias is not None:
                 new_position_bias = self.__hard_delete_4_dimensions(
@@ -955,6 +927,11 @@ class MrT5Stack(T5Stack):
                 )
                 use_cache = False
 
+        #### NEW CODE ####
+        # Return a new encoder attention mask if hard delete is enabled
+        attention_mask_to_return = None
+        #### NEW CODE ####
+
         # Prepare head mask if needed
         head_mask = self.get_head_mask(head_mask, self.config.num_layers)
         cross_attn_head_mask = self.get_head_mask(
@@ -1048,6 +1025,9 @@ class MrT5Stack(T5Stack):
             # Update resized masks if the previous layer did a hard deletion
             if layer_module.hard_delete_block and hard_delete:
                 delete_gate_mask, extended_attention_mask = layer_outputs[-2], layer_outputs[-1]
+                attention_mask_to_return = extended_attention_mask.squeeze(-2).squeeze(-2)
+                attention_mask_to_return = (attention_mask_to_return == 0).int()
+
             #### NEW CODE ####
 
             # layer_outputs is a tuple with:
@@ -1110,18 +1090,20 @@ class MrT5Stack(T5Stack):
                 ]
                 if v is not None
             )
+        
         return MrT5BaseModelOutputWithPastAndCrossAttentions(
             last_hidden_state=hidden_states,
             past_key_values=present_key_value_states,
             hidden_states=all_hidden_states,
             attentions=all_attentions,
             cross_attentions=all_cross_attentions,
+            #### NEW CODE ####
             delete_gate_mask=delete_gate_mask,
             delete_gate_output=delete_gate_output,
             delete_gate_logits=delete_gate_logits,
-            #### NEW CODE ####
             attn_logs=all_attn_logs,
             cross_attention_attn_logs=all_cross_attention_attn_logs,
+            attention_mask=attention_mask_to_return,
             #### NEW CODE ####
         )
 
@@ -1195,16 +1177,19 @@ class MrT5ForConditionalGeneration(T5ForConditionalGeneration):
         elif return_dict and not isinstance(encoder_outputs, BaseModelOutput):
             #### NEW CODE ####
             encoder_outputs = MrT5BaseModelOutputWithPastAndCrossAttentions(
-                last_hidden_state=encoder_outputs[0],
-                hidden_states=encoder_outputs[1] if len(
-                    encoder_outputs) > 1 else None,
-                attentions=encoder_outputs[2] if len(
-                    encoder_outputs) > 2 else None,
-                delete_gate_mask=None,
+                last_hidden_state=encoder_outputs.last_hidden_state,
+                hidden_states=encoder_outputs.hidden_states if 'hidden_states' in encoder_outputs else None,
+                attentions=encoder_outputs.attentions if 'attentions' in encoder_outputs else None,
+                delete_gate_mask=encoder_outputs.delete_gate_mask if 'delete_gate_mask' in encoder_outputs else None,
             )
             #### NEW CODE ####
 
-        hidden_states = encoder_outputs[0]
+        #### NEW CODE ####
+        
+        hidden_states = encoder_outputs.last_hidden_state
+        attention_mask = encoder_outputs.attention_mask if 'attention_mask' in encoder_outputs else attention_mask
+        
+        #### NEW CODE ####
 
         if self.model_parallel:
             torch.cuda.set_device(self.decoder.first_device)
