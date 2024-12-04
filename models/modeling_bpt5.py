@@ -357,21 +357,37 @@ class BPT5Block(nn.Module):
         ##### NEW CODE #####
         if self.has_boundary_predictor:
 
-            # Zero out hidden states corresponding to padding tokens
-            pad_token_mask = attention_mask.squeeze(-2).squeeze(-2).unsqueeze(-1) < 0
-            hidden_states = hidden_states * (~pad_token_mask)
+            # Create a simple pad token mask (i.e. inverting back the
+            # extended attention mask)
+            pad_token_mask = ~(attention_mask.squeeze(-2).squeeze(-2) < 0)
 
             hidden_states_permuted = hidden_states.permute(1, 0, 2)
 
             # Apply boundary predictor to hidden states
             _, hard_boundaries = self.boundary_predictor(self.down_ln(hidden_states_permuted))
 
-            # Compute new token positions
-            new_positions = self.__get_new_positions_and_mask(
-                hidden_states.size(0), hidden_states.size(1), hard_boundaries, hidden_states.device)
+            # Find the last non-pad token in each row
+            last_boundaries = torch.sum(pad_token_mask, dim=1) - 1
+
+            # Create indices to scatter 1 at the correct position
+            row_indices = torch.arange(hard_boundaries.shape[0])
+            hard_boundaries = hard_boundaries * pad_token_mask
+            hard_boundaries[row_indices, last_boundaries] = 1.0
             
             # Compute new position bias
             if position_bias is not None:
+
+                # Get the position biases to keep, masking
+                # the rest with zeros
+                ones_column = torch.ones(hard_boundaries.size(0), 1).to(hidden_states.device)
+                keep_this = torch.cat((ones_column, hard_boundaries[:, :-1]), dim=1)
+                keep_this = keep_this * pad_token_mask
+
+                # Compute new token positions
+                new_positions = self.__get_new_positions_and_mask(
+                    hidden_states.size(0), hidden_states.size(1), keep_this, hidden_states.device)
+
+                # Compute new position bias via deletion
                 new_position_bias = self.__hard_delete_4_dimensions(
                     position_bias.permute(0, 2, 3, 1), new_positions)
                 new_position_bias = self.__hard_delete_4_dimensions(
@@ -379,20 +395,25 @@ class BPT5Block(nn.Module):
                 position_bias = new_position_bias.permute(0, 3, 2, 1)
 
             # Compute new attention mask
-            new_attention_mask = self.__hard_delete_4_dimensions(
-                attention_mask.permute(0, 3, 1, 2), new_positions)
-            attention_mask = new_attention_mask.permute(0, 2, 3, 1)
+            ones_count = hard_boundaries.sum(dim=1)
+            range_tensor = torch.arange(ones_count.max().item()).unsqueeze(0).to(hidden_states.device)
+            new_attention_mask = torch.where(range_tensor < ones_count.unsqueeze(1), 0.0, torch.finfo(torch.float).min)
+            attention_mask = new_attention_mask.unsqueeze(-2).unsqueeze(-2)
 
+            # Downsample the hidden states using the hard boundaries
             hidden_states = shortening.downsample(
                     boundaries=hard_boundaries,
                     hidden=hidden_states_permuted,
                 )
-
+            
+            # Transpose back to original shape
             hidden_states = hidden_states.transpose(0, 1)
 
+            # Compute boundary predictor loss
             loss_boundaries = self.boundary_predictor.calc_loss(
                 preds=hard_boundaries, gt=None
             )
+
         ##### NEW CODE #####
 
         outputs = (hidden_states,)
