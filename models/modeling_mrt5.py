@@ -654,6 +654,10 @@ class MrT5Block(nn.Module):
             self_attn_past_key_value, cross_attn_past_key_value = None, None
 
         ##### NEW CODE #####
+        if self.has_delete_gate:
+            delete_gate_mask, delete_gate_logits = self.delete_gate(
+                hidden_states, input_ids)
+
         # Apply hard deletion
         if self.hard_delete_block and hard_delete:
 
