@@ -22,12 +22,14 @@ from trainer import (
     DecoderBaselineT5Trainer,
     BaselineMrT5Trainer,
     BPT5Trainer,
+    CanineT5Trainer,
 )
 from datasets import load_dataset
 from data.data_collator_finetuning import XNLIDataCollator
 from models.modeling_mrt5 import MrT5Config
 from models.modeling_t5 import T5Config
 from models.modeling_bpt5 import BPT5Config
+from models.modeling_canine import CanineT5Config
 from transformers import AutoTokenizer
 import math
 import numpy as np
@@ -204,6 +206,10 @@ if __name__ == "__main__":
                         help='Temperature for boundary predictor.')
     parser.add_argument('--prior', type=float, default=0.2)
 
+    # CanineT5 specific arguments
+    parser.add_argument('--downsampling_rate', type=int, default=4,
+                        help='Downsampling rate for CanineT5 model.')
+
     args = parser.parse_args()
 
     if args.training_task in DIAGNOSTIC_TASKS:
@@ -282,6 +288,11 @@ if __name__ == "__main__":
             boundary_predictor_type=args.boundary_predictor_type,
             temperature=args.temperature,
             prior=args.prior,
+        )
+    elif args.model_type == 'CanineT5':
+        t5_config = CanineT5Config.from_pretrained(
+            args.model_name,
+            downsampling_rate=args.downsampling_rate,
         )
     else:
         raise ValueError(
@@ -435,6 +446,15 @@ if __name__ == "__main__":
         )
     elif args.model_type == 'BPT5':
         trainer = BPT5Trainer(
+            model=model,
+            tokenizer=tokenizer,
+            args=training_args,                     # training arguments, defined above
+            train_dataset=train_dataset,            # training dataset
+            eval_dataset=eval_dataset,              # evaluation dataset
+            data_collator=collator,                 # the custom data collator
+        )
+    elif args.model_type == 'CanineT5':
+        trainer = CanineT5Trainer(
             model=model,
             tokenizer=tokenizer,
             args=training_args,                     # training arguments, defined above

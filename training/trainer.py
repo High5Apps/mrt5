@@ -710,3 +710,91 @@ class BPT5Trainer(T5Trainer):
 
         loss = loss + loss_boundaries
         return (loss, outputs) if return_outputs else loss
+
+
+class CanineT5Trainer(T5Trainer):
+    def __init__(
+        self,
+        model=None,
+        args=None,
+        data_collator=None,
+        train_dataset=None,
+        eval_dataset=None,
+        tokenizer=None,
+        model_init=None,
+        compute_metrics=None,
+        callbacks=None,
+        optimizers=(None, None),
+        preprocess_logits_for_metrics=None,
+        include_edit_distance=False,
+        random_seed=None,
+    ):
+        super().__init__(
+            model,
+            args,
+            data_collator,
+            train_dataset,
+            eval_dataset,
+            tokenizer,
+            model_init,
+            compute_metrics,
+            callbacks,
+            optimizers,
+            preprocess_logits_for_metrics,
+        )
+
+    def init_metrics(self):
+        metrics = {
+            "cross_entropy_loss": [],
+            "prediction_seq_accuracy": [],
+            "prediction_token_accuracy": [],
+            "percent_deleted_tokens": [],
+            "new_seq_len": [],
+            "eval_cross_entropy_loss": [],
+            "eval_prediction_seq_accuracy": [],
+            "eval_prediction_token_accuracy": [],
+            "eval_percent_deleted_tokens": [],
+            "eval_new_seq_len": [],
+        }
+        return metrics
+
+    def compute_loss(self, model, inputs, return_outputs=False):
+        input_ids = inputs.pop("input_ids")
+        attention_mask = inputs.pop(
+            "attention_mask") if "attention_mask" in inputs else None
+        labels = inputs.pop("labels")
+        outputs = model(input_ids=input_ids, labels=labels,
+                        attention_mask=attention_mask,
+                        output_hidden_states=True)
+
+        loss = outputs.loss
+        prediction_seq_accuracy = self.calculate_seq_accuracy(labels, outputs)
+        prediction_token_accuracy = self.calculate_token_accuracy(
+            labels, outputs)
+
+        # How many tokens are deleted is just determined by downsampling
+        # rate, so we can just calculate it using the last encoder hidden state
+        _, seq_len = input_ids.shape[0:2]
+        percent_deleted_tokens = outputs.encoder_last_hidden_state.shape[1] / \
+            seq_len * 100
+
+        # Flag for logging training vs. evaluation metrics
+        eval_flag = "" if model.training else "eval_"
+        self.metrics[f"{eval_flag}cross_entropy_loss"].append(
+            loss.detach().item())
+        self.metrics[f"{eval_flag}prediction_seq_accuracy"].append(
+            prediction_seq_accuracy)
+        self.metrics[f"{eval_flag}prediction_token_accuracy"].append(
+            prediction_token_accuracy)
+        self.metrics[f"{eval_flag}new_seq_len"].append(
+            outputs.encoder_last_hidden_state.shape[1])
+        self.metrics[f"{eval_flag}percent_deleted_tokens"].append(
+            percent_deleted_tokens)
+
+        # Compute the edit distance
+        if not model.training and self.include_edit_distance:
+            self.metrics[f"eval_edit_distance"].append(
+                self.calculate_edit_distance(labels, outputs))
+
+        return (loss, outputs) if return_outputs else loss
+

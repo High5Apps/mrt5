@@ -5,7 +5,8 @@ import torch
 import json
 from models.modeling_t5 import T5ForConditionalGeneration, T5Config
 from models.modeling_mrt5 import MrT5ForConditionalGeneration, MrT5Config
-from models.modeling_bpt5 import BPT5ForConditionalGeneration, BPT5Config
+from models.modeling_bpt5 import BPT5ForConditionalGeneration
+from models.modeling_canine import CanineT5ForConditionalGeneration
 from datasets import Dataset, IterableDataset
 
 # Change this path name to the path of the project
@@ -37,7 +38,7 @@ CHAR_IIT_TASKS = list(CHAR_IIT_TASKS_AND_INFO.keys())
 
 MODEL_ARCHITECTURES = ['T5', 'MrT5', 'LogSigmoidMrT5',
                        'DecoderBaselineT5', 'RandomT5', 'FixedT5',
-                       'BPT5']
+                       'BPT5', 'CanineT5']
 
 
 def check_weights(model):
@@ -119,6 +120,8 @@ def load_model_from_path(model_class, model_path=None, model_name=None, training
         model = MrT5ForConditionalGeneration.from_pretrained(model_path)
     elif model_class == "BPT5":
         model = BPT5ForConditionalGeneration.from_pretrained(model_path)
+    elif model_class == "CanineT5":
+        model = CanineT5ForConditionalGeneration.from_pretrained(model_path)
     else:
         raise ValueError(
             f"Model type must be one of {', '.join(MODEL_ARCHITECTURES)}.")
@@ -147,6 +150,9 @@ def load_model_from_hf(model_class, model_name, config):
             model_name, config=config)
     elif model_class == "BPT5":
         model = BPT5ForConditionalGeneration.from_pretrained(
+            model_name, config=config)
+    elif model_class == "CanineT5":
+        model = CanineT5ForConditionalGeneration.from_pretrained(
             model_name, config=config)
     else:
         raise ValueError(
