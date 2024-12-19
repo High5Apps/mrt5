@@ -8,7 +8,7 @@
 
 import torch
 import copy
-import numpy as np
+import math
 from torch import nn
 from models.modeling_t5 import (
     T5LayerCrossAttention,
@@ -80,6 +80,7 @@ class CharactersToMolecules(nn.Module):
         )
         self.activation = torch.nn.GELU()
         self.conv.reset_parameters()
+        self._init_weights()
 
     def forward(self, char_encoding: torch.Tensor) -> torch.Tensor:
 
@@ -91,6 +92,14 @@ class CharactersToMolecules(nn.Module):
         downsampled = self.activation(downsampled)
 
         return downsampled
+    
+    def _init_weights(self):
+        TORCH_INIT_FUNCTIONS["kaiming_uniform_"](self.conv.weight, a=math.sqrt(5))
+        if self.conv.bias is not None:
+            fan_in, _ = nn.init._calculate_fan_in_and_fan_out(self.conv.weight)
+            if fan_in != 0:
+                bound = 1 / math.sqrt(fan_in)
+                TORCH_INIT_FUNCTIONS["uniform_"](self.conv.bias, -bound, bound)
 
 
 class CanineT5Block(nn.Module):
@@ -213,7 +222,8 @@ class CanineT5Block(nn.Module):
 
                 # Keep every nth position bias, where n is the downsampling rate
                 keep_this = torch.zeros(pad_token_mask.shape).to(hidden_states.device)
-                keep_this[:, ::self.downsampling_rate] = 1.0
+                skip = self.downsampling_rate
+                keep_this[:, :-(skip-1):skip] = 1.0
                 # keep_this = keep_this * pad_token_mask
 
                 # Compute new token positions
