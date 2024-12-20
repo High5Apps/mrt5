@@ -43,7 +43,6 @@ class MrT5Config(T5Config):
         fixed_deletion_amount=0.5,
         train_language="en",
         eval_language="en",
-        output_attn_logs=False,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -56,7 +55,6 @@ class MrT5Config(T5Config):
         self.fixed_deletion_amount = fixed_deletion_amount
         self.train_language = train_language
         self.eval_language = eval_language
-        self.output_attn_logs = output_attn_logs
         self.delete_gate_layer = delete_gate_layer
 
 
@@ -65,8 +63,6 @@ class MrT5BaseModelOutputWithPastAndCrossAttentions(BaseModelOutputWithPastAndCr
     delete_gate_mask: torch.FloatTensor = None
     delete_gate_output: torch.FloatTensor = None
     delete_gate_logits: torch.FloatTensor = None
-    attn_logs: torch.FloatTensor = None
-    cross_attention_attn_logs: torch.FloatTensor = None
     attention_mask: torch.FloatTensor = None
 
 
@@ -75,9 +71,6 @@ class MrT5Seq2SeqLMOutput(Seq2SeqLMOutput):
     delete_gate_mask: torch.FloatTensor = None
     delete_gate_output: torch.FloatTensor = None
     delete_gate_logits: torch.FloatTensor = None
-    encoder_attn_logs: torch.FloatTensor = None
-    decoder_attn_logs: torch.FloatTensor = None
-    cross_attention_attn_logs: torch.FloatTensor = None
 
 
 TORCH_INIT_FUNCTIONS = {
@@ -251,7 +244,6 @@ class MrT5Attention(T5Attention):
         output_attentions=False,
         #### NEW CODE ####
         delete_gate_mask=None,
-        output_attn_logs=False,
         #### NEW CODE ####
     ):
         """
@@ -364,16 +356,10 @@ class MrT5Attention(T5Attention):
         # If there is no position bias, add attention mask to scores directly
         elif mask is not None:
             scores += mask
-        
-        # Create attention logs, log attention scores before applying gate mask
-        attn_logs = (scores.detach().clone(),)
 
         # Apply the mask from the delete gate
         if delete_gate_mask is not None:
             scores += delete_gate_mask.squeeze(-1).unsqueeze(-2).unsqueeze(-2)
-
-        # Log attention scores after applying gate mask
-        attn_logs = attn_logs + (scores,)
 
         if self.use_softmax1:
             attn_weights = softmax1(scores.float(), dim=-1).type_as(
@@ -383,8 +369,6 @@ class MrT5Attention(T5Attention):
                 scores
             )  # (batch_size, n_heads, seq_length, key_length)
 
-        # Log attention weights
-        attn_logs = attn_logs + (attn_weights,)
         #### NEW CODE ####
 
         attn_weights = nn.functional.dropout(
@@ -406,13 +390,6 @@ class MrT5Attention(T5Attention):
 
         if output_attentions:
             outputs = outputs + (attn_weights,)
-
-        #### NEW CODE ####
-        if output_attn_logs:
-            value_norms = torch.norm(value_states, p=2, dim=3)
-            attn_logs = attn_logs + (value_norms,)
-            outputs = outputs + (attn_logs,)
-        #### NEW CODE ####
 
         return outputs
 
@@ -445,7 +422,6 @@ class MrT5LayerSelfAttention(nn.Module):
         output_attentions=False,
         #### NEW CODE ####
         delete_gate_mask=None,
-        output_attn_logs=False,
         #### NEW CODE ####
     ):
         normed_hidden_states = self.layer_norm(hidden_states)
@@ -459,7 +435,6 @@ class MrT5LayerSelfAttention(nn.Module):
             output_attentions=output_attentions,
             #### NEW CODE ####
             delete_gate_mask=delete_gate_mask,
-            output_attn_logs=output_attn_logs,
             #### NEW CODE ####
         )
         hidden_states = hidden_states + self.dropout(attention_output[0])
@@ -498,7 +473,6 @@ class MrT5LayerCrossAttention(nn.Module):
         output_attentions=False,
         #### NEW CODE ####
         delete_gate_mask=None,
-        output_attn_logs=False,
         #### NEW CODE ####
     ):
         normed_hidden_states = self.layer_norm(hidden_states)
@@ -514,7 +488,6 @@ class MrT5LayerCrossAttention(nn.Module):
             output_attentions=output_attentions,
             #### NEW CODE ####
             delete_gate_mask=delete_gate_mask,
-            output_attn_logs=output_attn_logs,
             #### NEW CODE ####
         )
         layer_output = hidden_states + self.dropout(attention_output[0])
@@ -632,7 +605,6 @@ class MrT5Block(nn.Module):
         input_ids=None,
         hard_delete=None,
         deletion_threshold=None,
-        output_attn_logs=False,
         #### NEW CODE ####
     ):
         if past_key_value is not None:
@@ -696,7 +668,6 @@ class MrT5Block(nn.Module):
             # Only apply delete_gate_mask to self-attention if the block
             # is the encoder
             delete_gate_mask=None if self.is_decoder else delete_gate_mask,
-            output_attn_logs=output_attn_logs,
             #### NEW CODE ####
         )
         hidden_states, present_key_value_state = self_attention_outputs[:2]
@@ -734,7 +705,6 @@ class MrT5Block(nn.Module):
                 output_attentions=output_attentions,
                 #### NEW CODE ####
                 delete_gate_mask=delete_gate_mask,
-                output_attn_logs=output_attn_logs,
                 #### NEW CODE ####
             )
             hidden_states = cross_attention_outputs[0]
@@ -842,7 +812,6 @@ class MrT5Stack(T5Stack):
         delete_gate_logits=None,
         hard_delete=None,
         deletion_threshold=None,
-        output_attn_logs=None,
         #### NEW CODE ####
     ):
         # Model parallel
@@ -851,7 +820,6 @@ class MrT5Stack(T5Stack):
             self.embed_tokens = self.embed_tokens.to(self.first_device)
         use_cache = use_cache if use_cache is not None else self.config.use_cache
         output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
-        output_attn_logs = output_attn_logs if output_attn_logs is not None else self.config.output_attn_logs
         output_hidden_states = (
             output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
         )
@@ -944,8 +912,6 @@ class MrT5Stack(T5Stack):
         all_hidden_states = () if output_hidden_states else None
         all_attentions = () if output_attentions else None
         all_cross_attentions = () if (output_attentions and self.is_decoder) else None
-        all_attn_logs = () if output_attn_logs else None
-        all_cross_attention_attn_logs = () if (output_attn_logs and self.is_decoder) else None
         position_bias = None
         encoder_decoder_position_bias = None
 
@@ -995,7 +961,6 @@ class MrT5Stack(T5Stack):
                     output_attentions,
                     #### NEW CODE ####
                     delete_gate_mask,
-                    output_attn_logs,
                     #### NEW CODE ####
                 )
             else:
@@ -1016,7 +981,6 @@ class MrT5Stack(T5Stack):
                     input_ids=input_ids,
                     hard_delete=hard_delete,
                     deletion_threshold=deletion_threshold,
-                    output_attn_logs=output_attn_logs,
                     #### NEW CODE ####
                 )
 
@@ -1048,7 +1012,6 @@ class MrT5Stack(T5Stack):
             if self.is_decoder and encoder_hidden_states is not None:
                 #### NEW CODE ####
                 index = 4 if output_attentions else 3
-                index += 1 if output_attn_logs else 0
                 encoder_decoder_position_bias = layer_outputs[index]
                 #### NEW CODE ####
             # append next layer key value states
@@ -1061,13 +1024,6 @@ class MrT5Stack(T5Stack):
                 if self.is_decoder:
                     all_cross_attentions = all_cross_attentions + \
                         (layer_outputs[5],)
-                    
-            #### NEW CODE ####
-            if output_attn_logs:
-                all_attn_logs = all_attn_logs + (layer_outputs[-1],)
-                if self.is_decoder:
-                    all_cross_attention_attn_logs = all_cross_attention_attn_logs + (layer_outputs[-2],)
-            #### NEW CODE ####
 
             # Model Parallel: If it's the last layer for that device, put things on the next device
             if self.model_parallel:
@@ -1105,8 +1061,6 @@ class MrT5Stack(T5Stack):
             delete_gate_mask=delete_gate_mask,
             delete_gate_output=delete_gate_output,
             delete_gate_logits=delete_gate_logits,
-            attn_logs=all_attn_logs,
-            cross_attention_attn_logs=all_cross_attention_attn_logs,
             attention_mask=attention_mask_to_return,
             #### NEW CODE ####
         )
@@ -1150,7 +1104,6 @@ class MrT5ForConditionalGeneration(T5ForConditionalGeneration):
         #### NEW CODE ####
         hard_delete: bool = False,
         deletion_threshold: Optional[float] = None,
-        output_attn_logs: Optional[bool] = None,
         #### NEW CODE ####
     ) -> Union[Tuple[torch.FloatTensor], Seq2SeqLMOutput]:
         use_cache = use_cache if use_cache is not None else self.config.use_cache
@@ -1175,7 +1128,6 @@ class MrT5ForConditionalGeneration(T5ForConditionalGeneration):
                 #### NEW CODE ####
                 hard_delete=hard_delete,
                 deletion_threshold=deletion_threshold,
-                output_attn_logs=output_attn_logs,
                 #### NEW CODE ####
             )
         elif return_dict and not isinstance(encoder_outputs, BaseModelOutput):
@@ -1231,7 +1183,6 @@ class MrT5ForConditionalGeneration(T5ForConditionalGeneration):
             return_dict=return_dict,
             #### NEW CODE ####
             delete_gate_mask=encoder_outputs.delete_gate_mask,
-            output_attn_logs=output_attn_logs,
             #### NEW CODE ####
         )
 
@@ -1277,8 +1228,5 @@ class MrT5ForConditionalGeneration(T5ForConditionalGeneration):
             delete_gate_mask=encoder_outputs.delete_gate_mask,
             delete_gate_output=encoder_outputs.delete_gate_output,
             delete_gate_logits=encoder_outputs.delete_gate_logits,
-            encoder_attn_logs=encoder_outputs.attn_logs,
-            decoder_attn_logs=decoder_outputs.attn_logs,
-            cross_attention_attn_logs=decoder_outputs.cross_attention_attn_logs,
         )
         ##### NEW CODE #####

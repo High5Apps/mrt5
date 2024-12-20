@@ -232,10 +232,6 @@ class MrT5Trainer(T5Trainer):
             "new_seq_len": [],
             "value_counts": [],
             "delete_gate_histogram": [],
-            "layer_attn_scores_pre_gate": [],
-            "layer_attn_scores": [],
-            "layer_attn_weights": [],
-            "layer_value_norms": [],
             "eval_hard_cross_entropy_loss": [],
             "eval_hard_total_loss": [],
             "eval_hard_prediction_seq_accuracy": [],
@@ -253,10 +249,6 @@ class MrT5Trainer(T5Trainer):
             "eval_percent_non_pad_deleted_tokens": [],
             "eval_delete_gate_loss_coeff": [],
             "eval_new_seq_len": [],
-            "eval_layer_attn_scores_pre_gate": [],
-            "eval_layer_attn_scores": [],
-            "eval_layer_attn_weights": [],
-            "eval_layer_value_norms": [],
         }
         if self.include_edit_distance:
             metrics["eval_soft_edit_distance"] = []
@@ -281,7 +273,7 @@ class MrT5Trainer(T5Trainer):
         error = (target_deletion - current_deletion) / 100
         return max(0.0, curr_coeff + self.p_controller_value * error)
 
-    def __compute_loss(self, outputs, input_ids, log_deletion_metrics=False, log_attn_metrics=False, metrics_prefix=""):
+    def __compute_loss(self, outputs, input_ids, log_deletion_metrics=False, metrics_prefix=""):
 
         # Get delete gate mask
         delete_gate_output = outputs.delete_gate_output.squeeze(-1)
@@ -362,23 +354,6 @@ class MrT5Trainer(T5Trainer):
             self.metrics[f"{metrics_prefix}delete_gate_loss_coeff"].append(
                 self.delete_gate_loss_coeff)
 
-        if log_attn_metrics:
-            # Get encoder attention logs
-            layer = self.model.config.delete_gate_layer+1
-            (encoder_attn_scores_pre_gate,
-             encoder_attn_scores,
-             encoder_attn_weights,
-             encoder_value_norms) = outputs.encoder_attn_logs[layer]
-
-            self.metrics[f"{metrics_prefix}layer_attn_scores_pre_gate"].append(
-                encoder_attn_scores_pre_gate.mean())
-            self.metrics[f"{metrics_prefix}layer_attn_scores"].append(
-                encoder_attn_scores.mean())
-            self.metrics[f"{metrics_prefix}layer_attn_weights"].append(
-                encoder_attn_weights.sum(dim=-1).mean())
-            self.metrics[f"{metrics_prefix}layer_value_norms"].append(
-                encoder_value_norms.mean())
-
         return loss, cross_entropy_loss, delete_gate_output
 
     def compute_loss(self, model, inputs, return_outputs=False):
@@ -390,7 +365,7 @@ class MrT5Trainer(T5Trainer):
             # Log training metrics
             outputs = model(input_ids=input_ids, labels=labels,
                             attention_mask=attention_mask,
-                            output_hidden_states=True, output_attn_logs=True,
+                            output_hidden_states=True,
                             hard_delete=self.rng.random() < self.hard_delete_train_prob)
             loss, cross_entropy_loss, delete_gate_output = self.__compute_loss(
                 outputs, input_ids, log_deletion_metrics=True)
@@ -410,10 +385,10 @@ class MrT5Trainer(T5Trainer):
             # Log losses for soft deletion
             outputs = model(input_ids=input_ids, labels=labels,
                             attention_mask=attention_mask,
-                            output_hidden_states=True, output_attn_logs=True,
+                            output_hidden_states=True,
                             hard_delete=False)
             loss, cross_entropy_loss, _ = self.__compute_loss(
-                outputs, input_ids, log_attn_metrics=True, metrics_prefix="eval_")
+                outputs, input_ids, metrics_prefix="eval_")
             self.metrics["eval_soft_cross_entropy_loss"].append(
                 cross_entropy_loss.detach().item())
             self.metrics["eval_soft_total_loss"].append(
