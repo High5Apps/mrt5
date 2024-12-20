@@ -207,6 +207,8 @@ if __name__ == "__main__":
     parser.add_argument('--prior', type=float, default=0.2)
 
     # CanineT5 specific arguments
+    parser.add_argument('--downsampling_layer', type=int, default=2,
+                        help='Layer to add downsampling after.')
     parser.add_argument('--downsampling_rate', type=int, default=4,
                         help='Downsampling rate for CanineT5 model.')
 
@@ -292,6 +294,7 @@ if __name__ == "__main__":
     elif args.model_type == 'CanineT5':
         t5_config = CanineT5Config.from_pretrained(
             args.model_name,
+            downsampling_layer=args.downsampling_layer,
             downsampling_rate=args.downsampling_rate,
         )
     else:

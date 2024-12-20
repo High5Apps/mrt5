@@ -11,7 +11,7 @@ __pycache__/
 
 # logs and result files
 kallini*.out
-runs.md
+*runs.md
 eval_results/
 figures/
 
