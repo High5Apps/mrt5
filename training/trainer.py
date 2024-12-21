@@ -14,7 +14,7 @@ from typing import Optional
 @dataclass
 class MrT5TrainingArguments(TrainingArguments):
     delete_gate_loss_coeff: float = field(
-        default=1.0, metadata={"help": "Coefficient for the delete gate loss."}
+        default=0.0, metadata={"help": "Coefficient for the delete gate loss."}
     )
     entropy_reg_coeff_1: Optional[float] = field(
         default=None, metadata={"help": "First coefficient for the entropy regularization loss."}
@@ -191,7 +191,8 @@ class MrT5Trainer(T5Trainer):
         include_edit_distance=False,
         regularizer_delay=None,
         target_deletion_rate=None,
-        p_controller_value=0.000001
+        p_controller_value=0.000001,
+        p_controller_step=10,
     ):
         super().__init__(
             model,
@@ -214,6 +215,7 @@ class MrT5Trainer(T5Trainer):
         self.delete_gate_loss_coeff = args.delete_gate_loss_coeff
         self.target_deletion_rate = target_deletion_rate
         self.p_controller_value = p_controller_value
+        self.p_controller_step = p_controller_step
 
     def init_metrics(self):
         metrics = {
@@ -328,7 +330,7 @@ class MrT5Trainer(T5Trainer):
             loss = cross_entropy_loss
         else:
             # Adjust delete gate loss coefficient based on percentage of tokens deleted
-            if self.target_deletion_rate is not None and self.state.global_step % 10 == 0:
+            if self.target_deletion_rate is not None and self.state.global_step % self.p_controller_step == 0:
                 self.delete_gate_loss_coeff = self.p_controller(
                     self.target_deletion_rate * 100, percent_non_pad_deleted_tokens, self.delete_gate_loss_coeff)
             loss = cross_entropy_loss + delete_gate_loss

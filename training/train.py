@@ -155,7 +155,7 @@ if __name__ == "__main__":
                         default=4, help='Number of decoder layers.')
 
     # MrT5 specific arguments
-    parser.add_argument('--delete_gate_loss_coeff', type=float, default=1.0,
+    parser.add_argument('--delete_gate_loss_coeff', type=float, default=0.0,
                         help='Coefficient for the delete gate loss.')
     parser.add_argument('--hard_delete_train_prob', type=float, default=0.0,
                         help='Probability of hard deletion during training.')
@@ -188,6 +188,7 @@ if __name__ == "__main__":
     # P-controller arguments
     parser.add_argument('--target_deletion_rate', type=float, default=None,)
     parser.add_argument('--p_controller_value', type=float, default=None,)
+    parser.add_argument('--p_controller_step', type=int, default=None,)
 
     # RandomT5 specific arguments
     parser.add_argument('--random_deletion_probability', type=float, default=0.5,
@@ -418,6 +419,7 @@ if __name__ == "__main__":
             regularizer_delay=args.regularizer_delay,           # regularizer delay
             target_deletion_rate=args.target_deletion_rate,     # target deletion rate
             p_controller_value=args.p_controller_value,         # P-controller value
+            p_controller_step=args.p_controller_step,           # P-controller step
         )
     elif args.model_type in ('RandomT5', 'FixedT5'):
         trainer = BaselineMrT5Trainer(
