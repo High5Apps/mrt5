@@ -128,7 +128,7 @@ class SigmoidDeleteGate(nn.Module):
         # HuggingFace disables initialization during "from_pretrained"
         if isinstance(m, nn.Linear):
             TORCH_INIT_FUNCTIONS[init_func](m.weight)
-            m.bias.data.fill_(-1)
+            m.bias.data.fill_(1)
 
 
 class LogSigmoidDeleteGate(SigmoidDeleteGate):
@@ -506,7 +506,6 @@ class MrT5Block(nn.Module):
     def __init__(self, config, has_relative_attention_bias=False,
                  #### NEW CODE ####
                  has_delete_gate=False,
-                 hard_delete_block=False,
                  #### NEW CODE ####
                  ):
         super().__init__()
@@ -540,7 +539,6 @@ class MrT5Block(nn.Module):
                     f"Invalid deletion type: {config.deletion_type}")
 
         # Set hard_delete flags
-        self.hard_delete_block = hard_delete_block
         self.sigmoid_mask_scale = config.sigmoid_mask_scale
         self.deletion_threshold = config.deletion_threshold
         #### NEW CODE ####
@@ -626,33 +624,44 @@ class MrT5Block(nn.Module):
             self_attn_past_key_value, cross_attn_past_key_value = None, None
 
         ##### NEW CODE #####
+        # Initialize delete gate values and logits for logging/loss calculation
+        delete_gate_values = None
+        delete_gate_logits = None
+
         if self.has_delete_gate:
-            delete_gate_mask, delete_gate_logits = self.delete_gate(
+            delete_gate_values, delete_gate_logits = self.delete_gate(
                 hidden_states, input_ids)
+            delete_gate_mask = delete_gate_values
 
-        # Apply hard deletion
-        if self.hard_delete_block and hard_delete:
+            # Raise error if all tokens are deleted in any sequence in batch
+            if (delete_gate_values < self.deletion_threshold).all():
+                raise ValueError("All tokens are deleted in this batch. " + \
+                                 "Please adjust the deletion rate or " + \
+                                 "alpha hyperparameter.")
 
-            # Compute new token positions
-            new_positions, delete_gate_mask = self.__get_new_positions_and_mask(
-                hidden_states.size(0), hidden_states.size(1), delete_gate_mask, deletion_threshold, hidden_states.device)
+            # Apply hard deletion
+            if hard_delete:
 
-            # Compute new position bias
-            if position_bias is not None:
-                new_position_bias = self.__hard_delete_4_dimensions(
-                    position_bias.permute(0, 2, 3, 1), new_positions)
-                new_position_bias = self.__hard_delete_4_dimensions(
-                    new_position_bias.permute(0, 2, 1, 3), new_positions)
-                position_bias = new_position_bias.permute(0, 3, 2, 1)
+                # Compute new token positions
+                new_positions, delete_gate_mask = self.__get_new_positions_and_mask(
+                    hidden_states.size(0), hidden_states.size(1), delete_gate_mask, deletion_threshold, hidden_states.device)
 
-            # Compute new attention mask
-            new_attention_mask = self.__hard_delete_4_dimensions(
-                attention_mask.permute(0, 3, 1, 2), new_positions)
-            attention_mask = new_attention_mask.permute(0, 2, 3, 1)
+                # Compute new position bias
+                if position_bias is not None:
+                    new_position_bias = self.__hard_delete_4_dimensions(
+                        position_bias.permute(0, 2, 3, 1), new_positions)
+                    new_position_bias = self.__hard_delete_4_dimensions(
+                        new_position_bias.permute(0, 2, 1, 3), new_positions)
+                    position_bias = new_position_bias.permute(0, 3, 2, 1)
 
-            # Compute new hidden states and delete gate mask
-            hidden_states = self.__hard_delete_hidden_states(
-                hidden_states, new_positions)
+                # Compute new attention mask
+                new_attention_mask = self.__hard_delete_4_dimensions(
+                    attention_mask.permute(0, 3, 1, 2), new_positions)
+                attention_mask = new_attention_mask.permute(0, 2, 3, 1)
+
+                # Compute new hidden states and delete gate mask
+                hidden_states = self.__hard_delete_hidden_states(
+                    hidden_states, new_positions)
 
         ##### NEW CODE #####
 
@@ -749,13 +758,8 @@ class MrT5Block(nn.Module):
 
         ##### NEW CODE #####
         if self.has_delete_gate:
-            delete_gate_mask, delete_gate_logits = self.delete_gate(
-                hidden_states, input_ids)
-            outputs = outputs + (delete_gate_mask, delete_gate_logits)
-
-        # Return new resized masks if hard delete is enabled
-        elif self.hard_delete_block and hard_delete:
-            outputs = outputs + (delete_gate_mask, attention_mask)
+            outputs = outputs + \
+                (delete_gate_values, delete_gate_logits, delete_gate_mask, attention_mask)
         ##### NEW CODE #####
 
         # hidden-states, present_key_value_states, (self-attention position bias), (self-attention weights), (cross-attention position bias), (cross-attention weights), (delete_gate_mask), (delete_gate_logits)
@@ -785,8 +789,6 @@ class MrT5Stack(T5Stack):
                         has_relative_attention_bias=bool(i == 0),
                         # Add delete gate if specified
                         has_delete_gate=bool(i == config.delete_gate_layer),
-                        # Add hard delete if previous layer had delete gate
-                        hard_delete_block=bool(i == config.delete_gate_layer),
                     )
                 )
             self.block = nn.ModuleList(blocks)
@@ -987,14 +989,13 @@ class MrT5Stack(T5Stack):
             #### NEW CODE ####
             # Update delete_gate_mask if the previous layer had a delete gate
             if layer_module.has_delete_gate:
-                delete_gate_mask, delete_gate_logits = layer_outputs[-2], layer_outputs[-1]
-                delete_gate_output = delete_gate_mask
+                delete_gate_output, delete_gate_logits, delete_gate_mask, new_attention_mask = layer_outputs[-4], layer_outputs[-3], layer_outputs[-2], layer_outputs[-1]
 
-            # Update resized masks if the previous layer did a hard deletion
-            if layer_module.hard_delete_block and hard_delete:
-                delete_gate_mask, extended_attention_mask = layer_outputs[-2], layer_outputs[-1]
-                attention_mask_to_return = extended_attention_mask.squeeze(-2).squeeze(-2)
-                attention_mask_to_return = (attention_mask_to_return == 0).int()
+                # Update resized masks if the previous layer did a hard deletion
+                if hard_delete:
+                    extended_attention_mask = new_attention_mask
+                    attention_mask_to_return = extended_attention_mask.squeeze(-2).squeeze(-2)
+                    attention_mask_to_return = (attention_mask_to_return == 0).int()
 
             #### NEW CODE ####
 
