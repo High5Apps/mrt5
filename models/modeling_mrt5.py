@@ -786,7 +786,7 @@ class MrT5Stack(T5Stack):
                         # Add delete gate if specified
                         has_delete_gate=bool(i == config.delete_gate_layer),
                         # Add hard delete if previous layer had delete gate
-                        hard_delete_block=bool(i-1 == config.delete_gate_layer),
+                        hard_delete_block=bool(i == config.delete_gate_layer),
                     )
                 )
             self.block = nn.ModuleList(blocks)
