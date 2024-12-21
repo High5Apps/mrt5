@@ -37,7 +37,7 @@ class DiagnosticDataCollator:
 
 
 class MergeABCDataCollator(DiagnosticDataCollator):
-    def __init__(self, tokenizer, padding='max_length', max_length=128, seed=42, avg_abc_count=10):
+    def __init__(self, tokenizer, padding='max_length', max_length=64, seed=42, avg_abc_count=5):
         super().__init__(tokenizer, padding, max_length, seed)
         self.avg_abc_count = avg_abc_count  # Average number of times "ABC" will be placed
         # Initialize a random generator with a seed
@@ -106,7 +106,7 @@ class MergeABCDataCollator(DiagnosticDataCollator):
 
 class ContextualVowelRemovalDataCollator(DiagnosticDataCollator):
 
-    def __init__(self, tokenizer, padding='max_length', max_length=128, seed=42, avg_cv_count=50):
+    def __init__(self, tokenizer, padding='max_length', max_length=64, seed=42, avg_cv_count=25):
         super().__init__(tokenizer, padding, max_length, seed)
         self.VOWELS = set("aeiouAEIOU")
         self.LOWERCASE_CONSONANTS = set(
@@ -190,7 +190,7 @@ class ContextualVowelRemovalDataCollator(DiagnosticDataCollator):
 
 
 class VowelRemovalDataCollator(DiagnosticDataCollator):
-    def __init__(self, tokenizer, padding='max_length', max_length=128, seed=42):
+    def __init__(self, tokenizer, padding='max_length', max_length=64, seed=42):
         super().__init__(tokenizer, padding, max_length, seed)
 
     def __call__(self, features=None):
@@ -218,7 +218,7 @@ class VowelRemovalDataCollator(DiagnosticDataCollator):
 
 
 class CopyDataCollator(DiagnosticDataCollator):
-    def __init__(self, tokenizer, padding='max_length', max_length=128, seed=42):
+    def __init__(self, tokenizer, padding='max_length', max_length=64, seed=42):
         super().__init__(tokenizer, padding, max_length, seed)
 
     def __call__(self, features=None):
@@ -271,7 +271,7 @@ if __name__ == '__main__':
 
     # Data arguments
     parser.add_argument('--input_seq_length', type=int,
-                        default=128, help='Input sequence length for the model.')
+                        default=64, help='Input sequence length for the model.')
     parser.add_argument('--random_seed', type=int, default=42,
                         help='Random seed for reproducibility.')
     parser.add_argument("--train_n", type=int, default=1280000,
