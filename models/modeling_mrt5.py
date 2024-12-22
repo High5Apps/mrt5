@@ -104,7 +104,7 @@ class SigmoidDeleteGate(nn.Module):
         super().__init__()
         self.has_layer_norm = config.gate_layer_norm
         if self.has_layer_norm:
-            self.layer_norm = nn.LayerNorm(config.hidden_size)
+            self.layer_norm = T5LayerNorm(config.hidden_size)
         self.feed_forward = nn.Linear(config.hidden_size, 1)
         self._init_weights(self.feed_forward)
         self.activation = ScaledSigmoid(config.sigmoid_mask_scale)
