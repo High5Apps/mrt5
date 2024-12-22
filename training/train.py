@@ -187,8 +187,9 @@ if __name__ == "__main__":
     
     # P-controller arguments
     parser.add_argument('--target_deletion_rate', type=float, default=None,)
-    parser.add_argument('--p_controller_value', type=float, default=None,)
-    parser.add_argument('--p_controller_step', type=int, default=None,)
+    parser.add_argument('--controller_p', type=float, default=0.5,)
+    parser.add_argument('--controller_i', type=float, default=0.00001,)
+    parser.add_argument('--controller_step', type=int, default=10,)
 
     # RandomT5 specific arguments
     parser.add_argument('--random_deletion_probability', type=float, default=0.5,
@@ -418,8 +419,9 @@ if __name__ == "__main__":
             hard_delete_train_prob=args.hard_delete_train_prob, # hard deletion probability
             regularizer_delay=args.regularizer_delay,           # regularizer delay
             target_deletion_rate=args.target_deletion_rate,     # target deletion rate
-            p_controller_value=args.p_controller_value,         # P-controller value
-            p_controller_step=args.p_controller_step,           # P-controller step
+            controller_p=args.controller_p,                     # Controller value
+            controller_i=args.controller_i,                     # Controller value
+            controller_step=args.controller_step,           # P-controller step
         )
     elif args.model_type in ('RandomT5', 'FixedT5'):
         trainer = BaselineMrT5Trainer(

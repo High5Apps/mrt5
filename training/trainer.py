@@ -3,8 +3,8 @@
 
 import statistics
 import torch
-import wandb
 import nltk
+import wandb
 import numpy as np
 from transformers import TrainingArguments, Trainer
 from dataclasses import dataclass, field
@@ -155,10 +155,10 @@ class T5Trainer(Trainer):
 
     def log(self, logs):
         # Log the delete gate histogram
-        # if self.model.training and wandb.run is not None \
-        #         and "delete_gate_histogram" in self.metrics:
-        #     wandb.log({f'delete_gate_output_hist': wandb.Histogram(
-        #         self.metrics["delete_gate_histogram"], num_bins=10)}, step=self.state.global_step+1)
+        if self.model.training and wandb.run is not None \
+                and "delete_gate_histogram" in self.metrics:
+            wandb.log({f'delete_gate_output_hist': wandb.Histogram(
+                self.metrics["delete_gate_histogram"], num_bins=10)}, step=self.state.global_step+1)
 
         # Format the metrics to log
         formatted_metrics = {k: round(statistics.fmean(v), 4)
@@ -191,8 +191,9 @@ class MrT5Trainer(T5Trainer):
         include_edit_distance=False,
         regularizer_delay=None,
         target_deletion_rate=None,
-        p_controller_value=0.000001,
-        p_controller_step=10,
+        controller_p=0.5,
+        controller_i=0.00001,
+        controller_step=10,
     ):
         super().__init__(
             model,
@@ -214,8 +215,13 @@ class MrT5Trainer(T5Trainer):
         self.regularizer_delay = regularizer_delay
         self.delete_gate_loss_coeff = args.delete_gate_loss_coeff
         self.target_deletion_rate = target_deletion_rate
-        self.p_controller_value = p_controller_value
-        self.p_controller_step = p_controller_step
+
+        # Controller parameters
+        self.i = controller_i
+        self.p = controller_p
+        self.controller_step = controller_step
+        self.p_acc = 0.0
+        self.i_acc = 0.0
 
     def init_metrics(self):
         metrics = {
@@ -270,10 +276,16 @@ class MrT5Trainer(T5Trainer):
 
         return H_1, H_2
 
-    def p_controller(self, target_deletion, current_deletion, curr_coeff):
+    def i_controller(self, target_deletion, current_deletion, curr_coeff):
         # Calculate error
-        error = (target_deletion - current_deletion) / 100
-        return max(0.0, curr_coeff + self.p_controller_value * error)
+        error = target_deletion - current_deletion
+        return max(0.0, curr_coeff + self.i * error)
+
+    def pi_controller(self, target_deletion, current_deletion):
+        err = target_deletion - current_deletion
+        self.p_acc = 0.9 * self.p_acc + 0.1 * self.p * err
+        self.i_acc = self.i_acc + self.i * err
+        return max(0.0, self.p_acc + self.i_acc)
 
     def __compute_loss(self, outputs, input_ids, log_deletion_metrics=False, metrics_prefix=""):
 
@@ -330,9 +342,9 @@ class MrT5Trainer(T5Trainer):
             loss = cross_entropy_loss
         else:
             # Adjust delete gate loss coefficient based on percentage of tokens deleted
-            if self.target_deletion_rate is not None and self.state.global_step % self.p_controller_step == 0:
-                self.delete_gate_loss_coeff = self.p_controller(
-                    self.target_deletion_rate * 100, percent_non_pad_deleted_tokens, self.delete_gate_loss_coeff)
+            if self.target_deletion_rate is not None and self.state.global_step % self.controller_step == 0:
+                self.delete_gate_loss_coeff = self.i_controller(
+                    self.target_deletion_rate, percent_non_pad_deleted_tokens / 100, self.delete_gate_loss_coeff)
             loss = cross_entropy_loss + delete_gate_loss
 
         # Update running metrics
