@@ -43,6 +43,7 @@ class MrT5Config(T5Config):
         fixed_deletion_amount=0.5,
         train_language="en",
         eval_language="en",
+        use_gumbel_noise=True,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -56,6 +57,7 @@ class MrT5Config(T5Config):
         self.train_language = train_language
         self.eval_language = eval_language
         self.delete_gate_layer = delete_gate_layer
+        self.use_gumbel_noise = use_gumbel_noise
 
 
 @dataclass
@@ -98,6 +100,10 @@ class ScaledSigmoid(nn.Module):
     def forward(self, input):
         return self.sigmoid_mask_scale * torch.sigmoid(-input)
 
+def gumbel_noise_like(x: torch.Tensor) -> torch.Tensor:
+    eps = 3e-4 if x.dtype == torch.float16 else 1e-10
+    uniform = torch.empty_like(x).uniform_(eps, 1 - eps)
+    return - (- uniform.log()).log()
 
 class SigmoidDeleteGate(nn.Module):
     def __init__(self, config):
@@ -113,6 +119,12 @@ class SigmoidDeleteGate(nn.Module):
         if self.has_layer_norm:
             hidden_states = self.layer_norm(hidden_states)
         delete_gate_logits = self.feed_forward(hidden_states)
+
+        # Add gumbel noise to the delete gate logits
+        if self.training:
+            gumbel_noise = gumbel_noise_like(delete_gate_logits)
+            delete_gate_logits += gumbel_noise
+
         gate_values = self.activation(delete_gate_logits)
 
         # Check if there are any pad tokens in input_ids
