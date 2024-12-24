@@ -11,7 +11,7 @@ from data_collator_for_t5_mlm import (
     t5_mlm_tokenize_function,
     compute_input_and_target_lengths
 )
-from utils import SUBSET_LANGUAGES as LANGUAGES, LM_DATASET_PATH
+from utils import SUBSET_LANGUAGES, ALL_LANGUAGES, LM_DATASET_PATH
 from tqdm import tqdm
 import numpy as np
 import json
@@ -100,7 +100,7 @@ def preprocess_dataset_multilingual(datasets, num_examples, collator, rng):
                 'input_ids': processed_example['input_ids'].tolist(),
                 'labels': processed_example['labels'].tolist(),
                 'decoder_input_ids': processed_example['decoder_input_ids'].tolist(),
-                'language': list(LANGUAGES.keys())[dataset_idx],
+                'language': list(SUBSET_LANGUAGES.keys())[dataset_idx],
             }
             pbar.update(1)
             i += 1
@@ -108,7 +108,7 @@ def preprocess_dataset_multilingual(datasets, num_examples, collator, rng):
 def stream_and_preprocess_multilingual(n, collator, uid="", seed=42):
 
     datasets = []
-    for lang in LANGUAGES.keys():
+    for lang in SUBSET_LANGUAGES.keys():
         # Stream the C4 dataset with the specified language and split
         streaming_dataset = load_dataset(
             'allenai/c4', lang, split="train", streaming=True)
@@ -194,8 +194,13 @@ if __name__ == '__main__':
         stream_and_preprocess_multilingual(args.train_n, collator, args.uid)
 
     else:
-        if args.en_only:
+
+        if args.split == "test":
+            LANGUAGES = ALL_LANGUAGES
+        elif args.en_only:
             LANGUAGES = {"en": "English"}
+        else:
+            LANGUAGES = SUBSET_LANGUAGES
 
         # Iterate over languages and sample training and validation sets
         for i, l in enumerate(LANGUAGES.keys()):
