@@ -59,13 +59,20 @@ class MrT5Config(T5Config):
         self.delete_gate_layer = delete_gate_layer
         self.use_gumbel_noise = use_gumbel_noise
 
-
 @dataclass
 class MrT5BaseModelOutputWithPastAndCrossAttentions(BaseModelOutputWithPastAndCrossAttentions):
     delete_gate_mask: torch.FloatTensor = None
     delete_gate_output: torch.FloatTensor = None
     delete_gate_logits: torch.FloatTensor = None
     attention_mask: torch.FloatTensor = None
+    attention_queries: torch.FloatTensor = None
+    attention_keys: torch.FloatTensor = None
+    attention_values: torch.FloatTensor = None
+    attention_scores: torch.FloatTensor = None
+    cross_attention_keys: torch.FloatTensor = None
+    cross_attention_queries: torch.FloatTensor = None
+    cross_attention_values: torch.FloatTensor = None
+    cross_attention_scores: torch.FloatTensor = None
 
 
 @dataclass
@@ -73,6 +80,18 @@ class MrT5Seq2SeqLMOutput(Seq2SeqLMOutput):
     delete_gate_mask: torch.FloatTensor = None
     delete_gate_output: torch.FloatTensor = None
     delete_gate_logits: torch.FloatTensor = None
+    encoder_keys: torch.FloatTensor = None
+    encoder_queries: torch.FloatTensor = None
+    encoder_values: torch.FloatTensor = None
+    encoder_scores: torch.FloatTensor = None
+    decoder_keys: torch.FloatTensor = None
+    decoder_queries: torch.FloatTensor = None
+    decoder_values: torch.FloatTensor = None
+    decoder_scores: torch.FloatTensor = None
+    cross_attention_keys: torch.FloatTensor = None
+    cross_attention_queries: torch.FloatTensor = None
+    cross_attention_values: torch.FloatTensor = None
+    cross_attention_scores: torch.FloatTensor = None
 
 
 TORCH_INIT_FUNCTIONS = {
@@ -401,7 +420,8 @@ class MrT5Attention(T5Attention):
             (present_key_value_state,) + (position_bias,)
 
         if output_attentions:
-            outputs = outputs + (attn_weights,)
+            attentions_keys_queries = (attn_weights, key_states, query_states, value_states, scores)
+            outputs = outputs + (attentions_keys_queries,)
 
         return outputs
 
@@ -646,10 +666,10 @@ class MrT5Block(nn.Module):
             delete_gate_mask = delete_gate_values
 
             # Raise error if all tokens are deleted in any sequence in batch
-            if (delete_gate_values < self.deletion_threshold).all():
-                raise ValueError("All tokens are deleted in this batch. " + \
-                                 "Please adjust the deletion rate or " + \
-                                 "alpha hyperparameter.")
+            # if (delete_gate_values < self.deletion_threshold).all():
+            #     raise ValueError("All tokens are deleted in this batch. " + \
+            #                      "Please adjust the deletion rate or " + \
+            #                      "alpha hyperparameter.")
 
             # Apply hard deletion
             if hard_delete:
@@ -929,6 +949,17 @@ class MrT5Stack(T5Stack):
         position_bias = None
         encoder_decoder_position_bias = None
 
+        #### NEW CODE ####
+        all_queries = () if output_attentions else None
+        all_keys = () if output_attentions else None
+        all_values = () if output_attentions else None
+        all_scores = () if output_attentions else None
+        all_cross_attn_queries = () if (output_attentions and self.is_decoder) else None
+        all_cross_attn_keys = () if (output_attentions and self.is_decoder) else None
+        all_cross_attn_values = () if (output_attentions and self.is_decoder) else None
+        all_cross_attn_scores = () if (output_attentions and self.is_decoder) else None
+        #### NEW CODE ####
+
         hidden_states = self.dropout(inputs_embeds)
 
         for i, (layer_module, past_key_value) in enumerate(zip(self.block, past_key_values)):
@@ -1032,11 +1063,29 @@ class MrT5Stack(T5Stack):
                 present_key_value_states = present_key_value_states + \
                     (present_key_value_state,)
 
+            #### NEW CODE ####
             if output_attentions:
-                all_attentions = all_attentions + (layer_outputs[3],)
+                attn_weights, keys, queries, values, scores = layer_outputs[3]
+                all_attentions = all_attentions + (attn_weights,)
+                all_queries = all_queries + (queries,)
+                all_keys = all_keys + (keys,)
+                all_values = all_values + (values,)
+                all_scores = all_scores + (scores,)
+
                 if self.is_decoder:
+                    cross_attn_weights, cross_attn_keys, cross_attn_queries, \
+                        cross_attn_values, cross_attn_scores = layer_outputs[5]
                     all_cross_attentions = all_cross_attentions + \
-                        (layer_outputs[5],)
+                        (cross_attn_weights,)
+                    all_cross_attn_queries = all_cross_attn_queries + \
+                        (cross_attn_queries,)
+                    all_cross_attn_keys = all_cross_attn_keys + \
+                        (cross_attn_keys,)
+                    all_cross_attn_values = all_cross_attn_values + \
+                        (cross_attn_values,)
+                    all_cross_attn_scores = all_cross_attn_scores + \
+                        (cross_attn_scores,)
+            #### NEW CODE ####
 
             # Model Parallel: If it's the last layer for that device, put things on the next device
             if self.model_parallel:
@@ -1060,10 +1109,24 @@ class MrT5Stack(T5Stack):
                     all_hidden_states,
                     all_attentions,
                     all_cross_attentions,
+                    #### NEW CODE ####
+                    delete_gate_mask,
+                    delete_gate_output,
+                    delete_gate_logits,
+                    attention_mask_to_return,
+                    all_queries,
+                    all_keys,
+                    all_values,
+                    all_scores,
+                    all_cross_attn_queries,
+                    all_cross_attn_keys,
+                    all_cross_attn_values,
+                    all_cross_attn_scores,
+                    #### NEW CODE ####
                 ]
                 if v is not None
             )
-        
+
         return MrT5BaseModelOutputWithPastAndCrossAttentions(
             last_hidden_state=hidden_states,
             past_key_values=present_key_value_states,
@@ -1075,6 +1138,14 @@ class MrT5Stack(T5Stack):
             delete_gate_output=delete_gate_output,
             delete_gate_logits=delete_gate_logits,
             attention_mask=attention_mask_to_return,
+            attention_queries=all_queries,
+            attention_keys=all_keys,
+            attention_values=all_values,
+            attention_scores=all_scores,
+            cross_attention_queries=all_cross_attn_queries,
+            cross_attention_keys=all_cross_attn_keys,
+            cross_attention_values=all_cross_attn_values,
+            cross_attention_scores=all_cross_attn_scores,
             #### NEW CODE ####
         )
 
@@ -1241,6 +1312,18 @@ class MrT5ForConditionalGeneration(T5ForConditionalGeneration):
             delete_gate_mask=encoder_outputs.delete_gate_mask,
             delete_gate_output=encoder_outputs.delete_gate_output,
             delete_gate_logits=encoder_outputs.delete_gate_logits,
+            encoder_keys=encoder_outputs.attention_keys,
+            encoder_queries=encoder_outputs.attention_queries,
+            encoder_values=encoder_outputs.attention_values,
+            encoder_scores=encoder_outputs.attention_scores,
+            decoder_keys=decoder_outputs.attention_keys,
+            decoder_queries=decoder_outputs.attention_queries,
+            decoder_values=decoder_outputs.attention_values,
+            decoder_scores=decoder_outputs.attention_scores,
+            cross_attention_queries=decoder_outputs.cross_attention_queries,
+            cross_attention_keys=decoder_outputs.cross_attention_keys,
+            cross_attention_values=decoder_outputs.cross_attention_values,
+            cross_attention_scores=decoder_outputs.cross_attention_scores,
         )
         ##### NEW CODE #####
 
