@@ -6,96 +6,20 @@ sys.path.append('..')
 
 import torch
 import argparse
-import pandas as pd
+from functools import partial
 from tqdm import tqdm
 from torch.utils.data import DataLoader
 from utils import (
     get_task_dataset,
     load_model_from_path,
+    byt5_compute_metrics,
+    mrt5_compute_metrics,
 )
-
-def calculate_seq_accuracy(labels, outputs):
-    logits = outputs.logits
-    # Get the predicted IDs
-    predicted_ids = torch.argmax(logits, dim=-1)
-
-    # Compare predicted_ids with the true labels
-    correct_predictions = (predicted_ids == labels).all(dim=-1).sum().item()
-    total_predictions = labels.shape[0]
-
-    # Calculate accuracy
-    accuracy = correct_predictions / total_predictions
-
-    return accuracy
-
-
-def calculate_token_accuracy(labels, outputs):
-    logits = outputs.logits
-    # Get the predicted IDs
-    predicted_ids = torch.argmax(logits, dim=-1)
-
-    # Compare predicted_ids with the true labels
-    correct_predictions = (predicted_ids == labels).sum().item()
-
-    # Calculate accuracy
-    total_predictions = labels.numel()
-    accuracy = correct_predictions / total_predictions
-
-    return accuracy
-
 
 def get_input_ids_and_labels(batch):
     input_ids = batch['input_ids'].squeeze(axis=1).to(device)
     labels = batch['labels'].squeeze(axis=1).to(device)
     return input_ids, labels
-
-
-def byt5_compute_loss(model, batch):
-    # Get input ids and labels
-    input_ids, labels = get_input_ids_and_labels(batch)
-
-    # Get model outputs
-    outputs = model(input_ids=input_ids, labels=labels,
-                    output_hidden_states=True)
-
-    # Get accuracy scores
-    token_accuracy = calculate_token_accuracy(labels, outputs)
-    seq_accuracy = calculate_seq_accuracy(labels, outputs)
-
-    # Return cross entropy loss, percent deleted tokens, and new sequence length
-    return outputs.loss.item(), 0.0, \
-        outputs.encoder_last_hidden_state.shape[1], \
-        token_accuracy, seq_accuracy
-
-
-def mrt5_compute_loss(model, batch):
-    # Get input ids and labels
-    input_ids, labels = get_input_ids_and_labels(batch)
-
-    # Get model outputs
-    outputs = model(
-        input_ids=input_ids,
-        labels=labels,
-        hard_delete=True,
-        output_hidden_states=True,
-        deletion_threshold=args.deletion_threshold)
-
-    # Get delete gate output
-    delete_gate_output = outputs.delete_gate_output.squeeze(-1)
-
-    # Compute percent deleted tokens
-    batch_size, seq_len = input_ids.shape[0:2]
-    num_deleted_tokens = (delete_gate_output < args.deletion_threshold / 2).sum()
-    percent_deleted_tokens = num_deleted_tokens / (batch_size * seq_len) * 100
-
-    # Get accuracy scores
-    token_accuracy = calculate_token_accuracy(labels, outputs)
-    seq_accuracy = calculate_seq_accuracy(labels, outputs)
-
-    # Return cross entropy loss, percent deleted tokens, and new sequence length
-    return outputs.loss.item(), percent_deleted_tokens.mean().item(), \
-        outputs.encoder_last_hidden_state.shape[1], \
-        token_accuracy, seq_accuracy
 
 
 def load_eval_dataset(batch_size):
@@ -129,11 +53,12 @@ if __name__ == "__main__":
     parser.add_argument('--num_batches', type=int,
                         default=250, help='Number of batches to evaluate.')
     parser.add_argument('--checkpoint', type=int,
-                        default=20000, help='Model checkpoint to load for evaluation.')
+                        default=30000, help='Model checkpoint to load for evaluation.')
     parser.add_argument('--random_seed', type=int, default=42,
                         help='Random seed for reproducibility.')
     parser.add_argument('--deletion_threshold', type=float,
                         default=-15.0, help='Deletion gate threshold.')
+    parser.add_argument('--hard_delete', action='store_true', help='Use hard deletion instead of soft deletion.')
 
     # Eval arguments
     parser.add_argument('--per_device_eval_batch_size', type=int,
@@ -154,9 +79,11 @@ if __name__ == "__main__":
 
     # Determine loss function based on model type
     if args.model_type == 'T5':
-        compute_loss_function = byt5_compute_loss
+        metrics_function = byt5_compute_metrics
     elif args.model_type in ('MrT5', 'RandomT5', 'FixedT5'):
-        compute_loss_function = mrt5_compute_loss
+        metrics_function = partial(mrt5_compute_metrics,
+                                   deletion_threshold=args.deletion_threshold,
+                                   hard_delete=args.hard_delete)
     else:
         raise ValueError(
             f"Model type must be one of {', '.join(MODEL_CHOICES)}.")
@@ -182,9 +109,12 @@ if __name__ == "__main__":
         num_batches = 0
 
         for batch in tqdm(eval_dataloader, total=args.num_batches):
+
+            input_ids, labels = get_input_ids_and_labels(batch)
+            
             # Compute the loss
-            loss, percent_deleted_tokens, new_seq_len, token_accuracy, seq_accuracy = \
-                compute_loss_function(model, batch)
+            loss, percent_deleted_tokens, new_seq_len, seq_accuracy, token_accuracy = \
+                metrics_function(model, input_ids, labels)
 
             # Update the total metrics
             total_loss += loss
