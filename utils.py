@@ -194,13 +194,17 @@ def get_task_dataset(training_task, split, language="en", iterable_dataset=True)
 
     return dataset
 
-def __calculate_seq_accuracy(labels, outputs):
+def calculate_seq_accuracy(labels, outputs):
     logits = outputs.logits
     # Get the predicted IDs
     predicted_ids = torch.argmax(logits, dim=-1)
 
+    # Don't count indices of pad tokens as incorrect predictions
+    pad_tokens = labels <= 0
+    correct_tokens = (predicted_ids == labels) | pad_tokens
+
     # Compare predicted_ids with the true labels
-    correct_predictions = (predicted_ids == labels).all(dim=-1).sum().item()
+    correct_predictions = correct_tokens.all(dim=-1).sum().item()
     total_predictions = labels.shape[0]
 
     # Calculate accuracy
@@ -208,18 +212,53 @@ def __calculate_seq_accuracy(labels, outputs):
 
     return accuracy
 
+def calculate_token_accuracy(labels, outputs):
+    logits = outputs.logits
+    # Get the predicted IDs
+    predicted_ids = torch.argmax(logits, dim=-1)
+
+    # Don't count indices of pad tokens as incorrect predictions
+    pad_tokens = labels <= 0
+    num_pad_tokens = pad_tokens.sum().item()
+
+    # Compare predicted_ids with the true labels
+    correct_tokens = (predicted_ids == labels) | pad_tokens
+
+    # Compare predicted_ids with the true labels
+    correct_predictions = correct_tokens.sum().item() - num_pad_tokens
+
+    # Calculate accuracy
+    total_predictions = labels.numel() - num_pad_tokens
+    accuracy = correct_predictions / total_predictions
+
+    return accuracy
+
+
 def byt5_compute_metrics(model, input_ids, labels):
+
+    # Set pad tokens to -100 so they are not counted in the loss
+    labels[labels == 0] = -100
+
     # Get model outputs
     outputs = model(input_ids=input_ids,
                     labels=labels,
                     output_hidden_states=True)
     
-    accuracy = __calculate_seq_accuracy(labels, outputs)
+    # Calculate sequence and token accuracy
+    seq_accuracy = calculate_seq_accuracy(labels, outputs)
+    token_accuracy = calculate_token_accuracy(labels, outputs)
 
-    # Return accuracy and 0.0 for percent deleted tokens
-    return accuracy, 0.0
+    # Get the new sequence length
+    new_seq_length = outputs.encoder_last_hidden_state.shape[1]
+
+    return outputs.loss.item(), 0.0, new_seq_length, seq_accuracy, token_accuracy
+
 
 def mrt5_compute_metrics(model, input_ids, labels, deletion_threshold, hard_delete=True):
+
+    # Set pad tokens to -100 so they are not counted in the loss
+    labels[labels == 0] = -100
+
     # Get model outputs
     outputs = model(
         input_ids=input_ids,
@@ -231,27 +270,33 @@ def mrt5_compute_metrics(model, input_ids, labels, deletion_threshold, hard_dele
     # Get delete gate output
     delete_gate_output = outputs.delete_gate_output.squeeze(-1)
 
-    # Calculate sequence accuracy
-    accuracy = __calculate_seq_accuracy(labels, outputs)
-
     # Compute percent deleted tokens (excluding padding tokens)
     non_pad_mask = input_ids != 0
     num_non_pad_tokens = non_pad_mask.sum()
     num_deleted_tokens = ((delete_gate_output < deletion_threshold) & non_pad_mask).sum()
     percent_deleted_tokens = num_deleted_tokens / num_non_pad_tokens * 100
 
-    # Return cross entropy loss, percent deleted tokens, and new sequence length
-    return accuracy, percent_deleted_tokens.item()
+    # Calculate sequence and token accuracy
+    seq_accuracy = calculate_seq_accuracy(labels, outputs)
+    token_accuracy = calculate_token_accuracy(labels, outputs)
+
+    # Get the new sequence length
+    new_seq_length = outputs.encoder_last_hidden_state.shape[1]
+
+    # Return cross entropy loss, accuracy, and percent deleted tokens
+    return outputs.loss.item(), percent_deleted_tokens.item(), new_seq_length, seq_accuracy, token_accuracy
+
 
 def bpt5_compute_metrics(model, input_ids, labels):
+
+    # Set pad tokens to -100 so they are not counted in the loss
+    labels[labels == 0] = -100
+
     # Get model outputs
     outputs = model(
         input_ids=input_ids,
         labels=labels,
         output_hidden_states=True)
-
-    # Calculate sequence accuracy
-    accuracy = __calculate_seq_accuracy(labels, outputs)
 
     # Count on average how many tokens are deleted
     hard_boundaries = outputs.hard_boundaries
@@ -259,8 +304,15 @@ def bpt5_compute_metrics(model, input_ids, labels):
     num_deleted_tokens = torch.sum(hard_boundaries < 1.0).item()
     percent_deleted_tokens = num_deleted_tokens / (batch_size * seq_len) * 100
 
-    # Return cross entropy loss, percent deleted tokens, and new sequence length
-    return accuracy, percent_deleted_tokens
+    # Calculate sequence and token accuracy
+    seq_accuracy = calculate_seq_accuracy(labels, outputs)
+    token_accuracy = calculate_token_accuracy(labels, outputs)
+
+    # Get the new sequence length
+    new_seq_length = outputs.encoder_last_hidden_state.shape[1]
+
+    # Return cross entropy loss, accuracy, and percent deleted tokens
+    return outputs.loss.item(), percent_deleted_tokens, new_seq_length, seq_accuracy, token_accuracy
 
 ALL_LANGUAGES = {
     "af": "Afrikaans",
