@@ -9,9 +9,13 @@ from utils import (
     get_task_dataset,
     load_model_from_path,
     MODEL_ARCHITECTURES,
+    byt5_compute_metrics,
+    mrt5_compute_metrics,
+    bpt5_compute_metrics,
 )
 from torch.utils.data import DataLoader
 from tqdm import tqdm
+from functools import partial
 import pandas as pd
 import argparse
 import torch
@@ -23,78 +27,6 @@ def get_input_ids_and_labels(batch):
     input_ids = batch['input_ids'].squeeze(axis=1).to(device)
     labels = batch['labels'].squeeze(axis=1).to(device)
     return input_ids, labels
-
-
-def byt5_compute_loss(model, batch):
-    # Get input ids and labels
-    input_ids, labels = get_input_ids_and_labels(batch)
-
-    # Get model outputs
-    outputs = model(input_ids=input_ids, labels=labels,
-                    output_hidden_states=True)
-
-    # Return cross entropy loss, percent deleted tokens, and new sequence length
-    return outputs.loss.item(), 0.0, outputs.encoder_last_hidden_state.shape[1]
-
-
-def mrt5_compute_loss(model, batch):
-    # Get input ids and labels
-    input_ids, labels = get_input_ids_and_labels(batch)
-
-    # Get model outputs
-    outputs = model(
-        input_ids=input_ids,
-        labels=labels,
-        hard_delete=True,
-        output_hidden_states=True,
-        deletion_threshold=args.deletion_threshold)
-
-    # Get delete gate output
-    delete_gate_output = outputs.delete_gate_output.squeeze(-1)
-
-    # Compute percent deleted tokens
-    batch_size, seq_len = input_ids.shape[0:2]
-    num_deleted_tokens = (delete_gate_output <
-                          args.deletion_threshold / 2).sum()
-    percent_deleted_tokens = num_deleted_tokens / (batch_size * seq_len) * 100
-
-    # Return cross entropy loss, percent deleted tokens, and new sequence length
-    return outputs.loss.item(), percent_deleted_tokens.mean().item(), outputs.encoder_last_hidden_state.shape[1]
-
-
-def bpt5_compute_loss(model, batch):
-    # Get input ids and labels
-    input_ids, labels = get_input_ids_and_labels(batch)
-
-    # Get model outputs
-    outputs = model(
-        input_ids=input_ids,
-        labels=labels,
-        output_hidden_states=True)
-
-    # Count on average how many tokens are deleted
-    hard_boundaries = outputs.hard_boundaries
-    batch_size, seq_len = input_ids.shape[0:2]
-    num_deleted_tokens = torch.sum(hard_boundaries < 1.0).item()
-    percent_deleted_tokens = num_deleted_tokens / (batch_size * seq_len) * 100
-
-    # Return cross entropy loss, percent deleted tokens, and new sequence length
-    return outputs.loss.item(), percent_deleted_tokens, outputs.encoder_last_hidden_state.shape[1]
-
-
-def decoder_baseline_compute_loss(model, batch):
-    # Get input ids and labels
-    input_ids, labels = get_input_ids_and_labels(batch)
-
-    batch_size, _ = input_ids.shape
-
-    # Create a dummy input_ids tensor to pass to the model
-    input_ids = torch.tensor([[1]]*batch_size).to(input_ids.device)
-    outputs = model(input_ids=input_ids, labels=labels,
-                    output_hidden_states=True)
-
-    # Return cross entropy loss, percent deleted tokens, and new sequence length
-    return outputs.loss.item(), 100.0, outputs.encoder_last_hidden_state.shape[1]
 
 
 def load_eval_dataset(language, batch_size):
@@ -147,6 +79,8 @@ if __name__ == "__main__":
     parser.add_argument('--en_only', action='store_true',
                         help='Evaluate English only.')
 
+    parser.add_argument('--hard_delete', action='store_true', help='Use hard deletion instead of soft deletion.')
+
     args = parser.parse_args()
 
     multilingual = "" if not args.multilingual_model else "_multilingual"
@@ -164,13 +98,13 @@ if __name__ == "__main__":
 
     # Determine loss function based on model type
     if args.model_type == 'T5':
-        compute_loss_function = byt5_compute_loss
+        metrics_function = byt5_compute_metrics
     elif args.model_type in ('MrT5', 'RandomT5', 'FixedT5'):
-        compute_loss_function = mrt5_compute_loss
-    elif args.model_type == 'DecoderBaselineT5':
-        compute_loss_function = decoder_baseline_compute_loss
+        metrics_function = partial(mrt5_compute_metrics,
+                                   deletion_threshold=args.deletion_threshold,
+                                   hard_delete=args.hard_delete)
     elif args.model_type == 'BPT5':
-        compute_loss_function = bpt5_compute_loss
+        metrics_function = bpt5_compute_metrics
     else:
         raise ValueError(
             f"Model type must be {', '.join(MODEL_ARCHITECTURES)}.")
@@ -199,9 +133,12 @@ if __name__ == "__main__":
                 # Start the timer
                 start_time = time.time()
 
-                # Compute the loss
-                loss, percent_deleted_tokens, new_seq_len = compute_loss_function(
-                    model, batch)
+                # Get input IDs and labels
+                input_ids, labels = get_input_ids_and_labels(batch)
+
+                # Compute metrics
+                loss, percent_deleted_tokens, new_seq_len, _, _ = \
+                                metrics_function(model, input_ids, labels)
 
                 # End the timer
                 end_time = time.time()
@@ -257,7 +194,7 @@ if __name__ == "__main__":
 
                 for batch in tqdm(eval_dataloader, total=args.num_batches):
                     # Compute the loss
-                    loss, percent_deleted_tokens, new_seq_len = compute_loss_function(
+                    loss, percent_deleted_tokens, new_seq_len = metrics_function(
                         model, batch)
 
                     # Update the total metrics

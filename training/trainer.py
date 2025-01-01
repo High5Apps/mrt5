@@ -1,6 +1,9 @@
 # trainer.py
 # Author: Julie Kallini
 
+import sys
+sys.path.append('..')
+
 import statistics
 import torch
 import nltk
@@ -9,6 +12,7 @@ import numpy as np
 from transformers import TrainingArguments, Trainer
 from dataclasses import dataclass, field
 from typing import Optional
+from utils import calculate_seq_accuracy, calculate_token_accuracy
 
 
 @dataclass
@@ -84,46 +88,6 @@ class T5Trainer(Trainer):
         average_edit_distance = sum(edit_distances) / len(edit_distances)
         return average_edit_distance
 
-    def calculate_seq_accuracy(self, labels, outputs):
-        logits = outputs.logits
-        # Get the predicted IDs
-        predicted_ids = torch.argmax(logits, dim=-1)
-
-        # Don't count indices of pad tokens as incorrect predictions
-        pad_tokens = labels <= 0
-        correct_tokens = (predicted_ids == labels) | pad_tokens
-
-        # Compare predicted_ids with the true labels
-        correct_predictions = correct_tokens.all(dim=-1).sum().item()
-        total_predictions = labels.shape[0]
-
-        # Calculate accuracy
-        accuracy = correct_predictions / total_predictions
-
-        return accuracy
-
-    def calculate_token_accuracy(self, labels, outputs):
-        logits = outputs.logits
-        # Get the predicted IDs
-        predicted_ids = torch.argmax(logits, dim=-1)
-
-        # Don't count indices of pad tokens as incorrect predictions
-        pad_tokens = labels <= 0
-        num_pad_tokens = pad_tokens.sum().item()
-
-        # Compare predicted_ids with the true labels
-        correct_tokens = (predicted_ids == labels) | pad_tokens
-
-        # Compare predicted_ids with the true labels
-        correct_predictions = correct_tokens.sum().item() - num_pad_tokens
-
-        # Calculate accuracy
-        total_predictions = labels.numel() - num_pad_tokens
-        accuracy = correct_predictions / total_predictions
-
-        return accuracy
-
-
     def compute_loss(self, model, inputs, return_outputs=False):
         input_ids = inputs.pop("input_ids")
         attention_mask = inputs.pop(
@@ -133,8 +97,8 @@ class T5Trainer(Trainer):
                         labels=labels, output_hidden_states=True)
 
         loss = outputs.loss
-        prediction_seq_accuracy = self.calculate_seq_accuracy(labels, outputs)
-        prediction_token_accuracy = self.calculate_token_accuracy(
+        prediction_seq_accuracy = calculate_seq_accuracy(labels, outputs)
+        prediction_token_accuracy = calculate_token_accuracy(
             labels, outputs)
 
         # Flag for logging training vs. evaluation metrics
@@ -415,9 +379,9 @@ class MrT5Trainer(T5Trainer):
 
             # Log prediction accuracy
             self.metrics["prediction_seq_accuracy"].append(
-                self.calculate_seq_accuracy(labels, outputs))
+                calculate_seq_accuracy(labels, outputs))
             self.metrics["prediction_token_accuracy"].append(
-                self.calculate_token_accuracy(labels, outputs))
+                calculate_token_accuracy(labels, outputs))
         else:
             # Log losses for soft deletion
             outputs = model(input_ids=input_ids, labels=labels,
@@ -434,9 +398,9 @@ class MrT5Trainer(T5Trainer):
 
             # Log prediction accuracy
             self.metrics["eval_soft_prediction_seq_accuracy"].append(
-                self.calculate_seq_accuracy(labels, outputs))
+                calculate_seq_accuracy(labels, outputs))
             self.metrics["eval_soft_prediction_token_accuracy"].append(
-                self.calculate_token_accuracy(labels, outputs))
+                calculate_token_accuracy(labels, outputs))
 
             if self.include_edit_distance:
                 self.metrics["eval_soft_edit_distance"].append(
@@ -456,9 +420,9 @@ class MrT5Trainer(T5Trainer):
 
             # Log prediction accuracy
             self.metrics["eval_hard_prediction_seq_accuracy"].append(
-                self.calculate_seq_accuracy(labels, outputs))
+                calculate_seq_accuracy(labels, outputs))
             self.metrics["eval_hard_prediction_token_accuracy"].append(
-                self.calculate_token_accuracy(labels, outputs))
+                calculate_token_accuracy(labels, outputs))
 
             if self.include_edit_distance:
                 self.metrics[f"eval_hard_edit_distance"].append(
@@ -691,8 +655,8 @@ class BPT5Trainer(T5Trainer):
 
         loss = outputs.loss
         loss_boundaries = outputs.loss_boundaries
-        prediction_seq_accuracy = self.calculate_seq_accuracy(labels, outputs)
-        prediction_token_accuracy = self.calculate_token_accuracy(
+        prediction_seq_accuracy = calculate_seq_accuracy(labels, outputs)
+        prediction_token_accuracy = calculate_token_accuracy(
             labels, outputs)
 
         # Count on average how many tokens are deleted
@@ -782,8 +746,8 @@ class CanineT5Trainer(T5Trainer):
                         output_hidden_states=True)
 
         loss = outputs.loss
-        prediction_seq_accuracy = self.calculate_seq_accuracy(labels, outputs)
-        prediction_token_accuracy = self.calculate_token_accuracy(
+        prediction_seq_accuracy = calculate_seq_accuracy(labels, outputs)
+        prediction_token_accuracy = calculate_token_accuracy(
             labels, outputs)
 
         # How many tokens are deleted is just determined by downsampling

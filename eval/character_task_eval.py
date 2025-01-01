@@ -120,10 +120,13 @@ if __name__ == "__main__":
             for batch in tqdm(eval_dataloader):
                 # Compute metrics
                 input_ids, labels = get_input_ids_and_labels(batch)
-                acc, percent_deleted_tokens = metrics_function(model, input_ids, labels)
+
+                # Get metrics from the model
+                _, percent_deleted_tokens, _, seq_accuracy, _ = \
+                                metrics_function(model, input_ids, labels)
 
                 # Update the total metrics
-                total_accuracy += acc
+                total_accuracy += seq_accuracy
                 total_percent_deleted_tokens += percent_deleted_tokens
 
             # End the timer
