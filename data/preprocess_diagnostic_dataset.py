@@ -4,15 +4,15 @@
 import sys
 sys.path.append('..')
 
-from transformers import AutoTokenizer
-from tqdm import tqdm
-from utils import DIAGNOSTIC_TASKS, DIAGNOSTIC_DATASET_PATH
-import json
-import argparse
-import string
-import os
-import re
 import numpy as np  # Ensure to import numpy for Gaussian distribution
+import re
+import os
+import string
+import argparse
+import json
+from utils import DIAGNOSTIC_TASKS, DIAGNOSTIC_DATASET_PATH
+from tqdm import tqdm
+from transformers import AutoTokenizer
 
 
 class DiagnosticDataCollator:
@@ -31,6 +31,29 @@ class DiagnosticDataCollator:
         return self.tokenizer(inputs, padding=self.padding, truncation=True,
                               max_length=self.max_length, return_tensors='pt')
 
+    def get_insertion_indices(self, num_insertions, seq_len, subseq_len):
+        result = []
+        attempts = 0
+        while len(result) < num_insertions:
+            # Choose a random position to insert the sequence
+            candidate = self.rng.choice(range(seq_len - subseq_len))
+
+            # Check if this candidate is at least subseq_len away from
+            # all existing numbers in the result
+            if all(abs(candidate - num) >= subseq_len for num in result):
+                result.append(candidate)
+
+            attempts += 1
+
+            # If we have tried too many times, break the loop
+            if attempts > 500:
+                break
+
+        return result
+
+    def insert_subsequence(self, text, subseq, insert_pos):
+        return text[:insert_pos] + subseq + text[insert_pos + len(subseq):]
+
     def __call__(self, features=None):
         raise NotImplementedError(
             "This method should be implemented by subclasses")
@@ -43,25 +66,22 @@ class MergeABCDataCollator(DiagnosticDataCollator):
         # Initialize a random generator with a seed
         self.rng = np.random.default_rng(seed)
 
-    def get_abc_indices(self, num_insertions, seq_len):
-        result = []
-        attempts = 0
-        while len(result) < num_insertions:
+    def insert_subsequences(self, text, subseq):
+        # Determine how many times to insert subsequence
+        num_insertions = max(
+            1, int(self.rng.normal(loc=self.avg_abc_count, scale=self.avg_abc_count / 2)))
 
-            # Choose a random position to insert "ABC"
-            # Start at 1 to exclude the "#" character
-            candidate = self.rng.choice(range(seq_len - 3))
+        # Get the indices where the subsequence will be inserted
+        insertion_indices = self.get_insertion_indices(
+            num_insertions, len(text), len(subseq))
 
-            # Check if this candidate is at least 3 away from all existing numbers in the result
-            if all(abs(candidate - num) >= 3 for num in result):
-                result.append(candidate)
+        # Insert the subsequences into the input text
+        input_text = text
+        for insert_pos in insertion_indices:
+            input_text = self.insert_subsequence(
+                input_text, subseq, insert_pos)
 
-            # If we have tried too many times, break the loop
-            attempts += 1
-            if attempts > 500:
-                break
-
-        return result
+        return input_text
 
     def __call__(self, features=None):
         if features is None:
@@ -73,19 +93,15 @@ class MergeABCDataCollator(DiagnosticDataCollator):
 
         for text in [feature['text'] for feature in features]:
 
-            # Determine how many times to insert "ABC" based on a Gaussian distribution
-            num_insertions = max(
-                1, int(self.rng.normal(loc=self.avg_abc_count, scale=self.avg_abc_count / 2)))
+            # Insert A, B, and C independently into text
+            input_text = self.insert_subsequences(text, "A")
+            input_text = self.insert_subsequences(input_text, "B")
+            input_text = self.insert_subsequences(input_text, "C")
 
-            # Get the indices where "ABC" will be inserted
-            insertion_indices = self.get_abc_indices(num_insertions, len(text))
+            # Insert ABC sequences into text
+            input_text = self.insert_subsequences(input_text, "ABC")
 
-            # Insert "ABC" into the input text and "D" into the label text
-            input_text = text
-            for insert_pos in insertion_indices:
-                input_text = (input_text[:insert_pos] + "ABC" +
-                              input_text[insert_pos + 3:])
-
+            # Replace ABC with D in the labels
             label_text = re.sub(r'ABC', 'D', input_text)
 
             inputs_with_abc.append("#" + input_text)
@@ -119,24 +135,6 @@ class ContextualVowelRemovalDataCollator(DiagnosticDataCollator):
         # Initialize a random generator with a seed
         self.rng = np.random.default_rng(seed)
 
-    def get_cv_indices(self, num_insertions, seq_len):
-        result = []
-        attempts = 0
-        while len(result) < num_insertions:
-            # Choose a random position to insert the consonant-vowel pair
-            candidate = self.rng.choice(range(seq_len - 2))
-
-            # Check if this candidate is at least 2 away from all existing numbers in the result
-            if all(abs(candidate - num) >= 2 for num in result):
-                result.append(candidate)
-
-            # If we have tried too many times, break the loop
-            attempts += 1
-            if attempts > 500:
-                break
-
-        return result
-
     def generate_random_cv(self):
         # Generate a random consonant followed by a random vowel
         consonant = self.rng.choice(list(self.CONSONANTS))
@@ -157,7 +155,8 @@ class ContextualVowelRemovalDataCollator(DiagnosticDataCollator):
                 1, int(self.rng.normal(loc=self.avg_cv_count, scale=self.avg_cv_count / 2)))
 
             # Get the indices where the consonant-vowel pairs will be inserted
-            insertion_indices = self.get_cv_indices(num_insertions, len(text))
+            insertion_indices = self.get_insertion_indices(
+                num_insertions, len(text), 2)
 
             input_text = text
             for insert_pos in insertion_indices:
@@ -165,8 +164,8 @@ class ContextualVowelRemovalDataCollator(DiagnosticDataCollator):
                 cv_pair = self.generate_random_cv()
 
                 # Insert the consonant-vowel pair into the input text
-                input_text = (input_text[:insert_pos] +
-                              cv_pair + input_text[insert_pos + 2:])
+                input_text = self.insert_subsequence(
+                    input_text, cv_pair, insert_pos)
 
             # Replace each consonant-vowel pair with the consonant
             label_text = re.sub(
