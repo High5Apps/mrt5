@@ -20,6 +20,9 @@ class MrT5TrainingArguments(TrainingArguments):
     delete_gate_loss_coeff: float = field(
         default=0.0, metadata={"help": "Coefficient for the delete gate loss."}
     )
+    scores_loss_coeff: float = field(
+        default=0.0, metadata={"help": "Coefficient for the key/query norm loss."}
+    )
     entropy_reg_coeff_1: Optional[float] = field(
         default=None, metadata={"help": "First coefficient for the entropy regularization loss."}
     )
@@ -158,7 +161,6 @@ class MrT5Trainer(T5Trainer):
         controller_p=0.5,
         controller_i=0.00001,
         controller_step=10,
-        regularize_key_query_norm=False,
     ):
         super().__init__(
             model,
@@ -179,8 +181,8 @@ class MrT5Trainer(T5Trainer):
         self.deletion_threshold = model.config.deletion_threshold
         self.regularizer_delay = regularizer_delay
         self.delete_gate_loss_coeff = args.delete_gate_loss_coeff
+        self.scores_loss_coeff = args.scores_loss_coeff
         self.target_deletion_rate = target_deletion_rate
-        self.regularize_key_query_norm = regularize_key_query_norm
         self.delete_gate_layer = model.config.delete_gate_layer
 
         # Controller parameters
@@ -254,21 +256,16 @@ class MrT5Trainer(T5Trainer):
         self.i_acc = self.i_acc + self.i * err
         return max(0.0, self.p_acc + self.i_acc)
     
-    def __get_mean_norm(self, tensor, min=2.0):
-        return (tensor.norm(dim=-1).clamp(min).mean()-min).mean()
-
+    def __get_clamped_mean(self, tensor, min_value=5.0):
+        return (tensor.clamp(min_value).mean()-min_value).mean()
     
-    def __key_query_norm_loss(self, outputs):
-        mean_norms = []
-        for k in outputs.encoder_keys[self.delete_gate_layer:]:
-            mean_norms.append(self.__get_mean_norm(k))
-        for q in outputs.encoder_queries[self.delete_gate_layer:]:
-            mean_norms.append(self.__get_mean_norm(q))
-        for k in outputs.cross_attention_keys:
-            mean_norms.append(self.__get_mean_norm(k))
-        for q in outputs.cross_attention_queries:
-            mean_norms.append(self.__get_mean_norm(q))       
-        return sum(mean_norms) / len(mean_norms)
+    def __scores_loss(self, outputs):
+        means = []
+        for s in outputs.encoder_scores[self.delete_gate_layer:]:
+            means.append(self.__get_clamped_mean(s))
+        for s in outputs.cross_attention_scores:
+            means.append(self.__get_clamped_mean(s))    
+        return sum(means) / len(means)
 
     def __compute_loss(self, outputs, input_ids, log_deletion_metrics=False, metrics_prefix=""):
 
@@ -330,8 +327,8 @@ class MrT5Trainer(T5Trainer):
                     self.target_deletion_rate, percent_non_pad_deleted_tokens / 100, self.delete_gate_loss_coeff)
             loss = cross_entropy_loss + delete_gate_loss
 
-            if self.regularize_key_query_norm:
-                loss += self.__key_query_norm_loss(outputs)
+        if self.scores_loss_coeff > 0:
+            loss = loss + self.__scores_loss(outputs) * self.scores_loss_coeff
 
         # Update running metrics
         if log_deletion_metrics:

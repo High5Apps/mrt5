@@ -177,8 +177,8 @@ if __name__ == "__main__":
                         default=-15.0, help='Deletion threshold.')
     parser.add_argument('--regularizer_delay', type=int,
                         help='Number of steps before applying regularizer.')
-    parser.add_argument('--regularize_key_query_norm', action='store_true',
-                        help='Regularize key and query norms.')
+    parser.add_argument('--scores_loss_coeff', type=float, default=0.0,
+                        help='Coefficient for the key/query norm loss.')
     parser.add_argument('--use_softmax1',
                         action='store_true', help='Specify layer to add delete gate after.')
     parser.add_argument('--delete_gate_layer', type=int, default=2, help='Layer to add delete gate after.')
@@ -406,6 +406,7 @@ if __name__ == "__main__":
         report_to=[] if args.disable_wandb else "wandb",
         run_name=run_name,
         delete_gate_loss_coeff=args.delete_gate_loss_coeff,
+        scores_loss_coeff=args.scores_loss_coeff,
         remove_unused_columns=False,
         entropy_reg_coeff_1=args.entropy_reg_coeff_1,
         entropy_reg_coeff_2=args.entropy_reg_coeff_2,
@@ -423,7 +424,6 @@ if __name__ == "__main__":
             loss_function=args.loss_function,                   # loss function for delete gate
             hard_delete_train_prob=args.hard_delete_train_prob, # hard deletion probability
             regularizer_delay=args.regularizer_delay,           # regularizer delay
-            regularize_key_query_norm=args.regularize_key_query_norm, # regularize key and query norms
             target_deletion_rate=args.target_deletion_rate,     # target deletion rate
             controller_p=args.controller_p,                     # Controller value
             controller_i=args.controller_i,                     # Controller value
