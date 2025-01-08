@@ -20,14 +20,35 @@ class MrT5TrainingArguments(TrainingArguments):
     delete_gate_loss_coeff: float = field(
         default=0.0, metadata={"help": "Coefficient for the delete gate loss."}
     )
+    loss_function: str = field(
+        default="gate_mean_loss", metadata={"help": "Loss function to use for delete gate training."}
+    )
+    hard_delete_train_prob: float = field(
+        default=0.0, metadata={"help": "Probability of hard deletion during training."}
+    )
+    regularizer_delay: Optional[int] = field(
+        default=None, metadata={"help": "Number of steps to delay regularizer."}    
+    )
+    target_deletion_rate: Optional[float] = field(
+        default=None, metadata={"help": "Target deletion rate for the delete gate."}    
+    )
+    controller_p: float = field(
+        default=0.5, metadata={"help": "Proportional gain for the controller."} 
+    )
+    controller_i: float = field(
+        default=0.00001, metadata={"help": "Integral gain for the controller."}
+    )
+    controller_step: int = field(
+        default=1, metadata={"help": "Number of steps between controller updates."}
+    )
     scores_loss_coeff: float = field(
         default=0.0, metadata={"help": "Coefficient for the key/query norm loss."}
     )
-    entropy_reg_coeff_1: Optional[float] = field(
-        default=None, metadata={"help": "First coefficient for the entropy regularization loss."}
+    entropy_reg_coeff_1: float = field(
+        default=0.0, metadata={"help": "First coefficient for the entropy regularization loss."}
     )
-    entropy_reg_coeff_2: Optional[float] = field(
-        default=None, metadata={"help": "Second coefficient for the entropy regularization loss."}
+    entropy_reg_coeff_2: float = field(
+        default=0.0, metadata={"help": "Second coefficient for the entropy regularization loss."}
     )
 
 
@@ -153,14 +174,8 @@ class MrT5Trainer(T5Trainer):
         callbacks=None,
         optimizers=(None, None),
         preprocess_logits_for_metrics=None,
-        loss_function="gate_mean_loss",
-        hard_delete_train_prob=0.0,
         include_edit_distance=False,
-        regularizer_delay=None,
-        target_deletion_rate=None,
-        controller_p=0.5,
-        controller_i=0.00001,
-        controller_step=10,
+        random_seed=None,
     ):
         super().__init__(
             model,
@@ -175,20 +190,21 @@ class MrT5Trainer(T5Trainer):
             optimizers,
             preprocess_logits_for_metrics,
             include_edit_distance,
+            random_seed,
         )
-        self.loss_function = loss_function
-        self.hard_delete_train_prob = hard_delete_train_prob
+        self.loss_function = args.loss_function
+        self.hard_delete_train_prob = args.hard_delete_train_prob
         self.deletion_threshold = model.config.deletion_threshold
-        self.regularizer_delay = regularizer_delay
+        self.regularizer_delay = args.regularizer_delay
         self.delete_gate_loss_coeff = args.delete_gate_loss_coeff
         self.scores_loss_coeff = args.scores_loss_coeff
-        self.target_deletion_rate = target_deletion_rate
+        self.target_deletion_rate = args.target_deletion_rate
         self.delete_gate_layer = model.config.delete_gate_layer
 
         # Controller parameters
-        self.i = controller_i
-        self.p = controller_p
-        self.controller_step = controller_step
+        self.i = args.controller_i
+        self.p = args.controller_p
+        self.controller_step = args.controller_step
         self.p_acc = 0.0
         self.i_acc = 0.0
 
@@ -258,7 +274,7 @@ class MrT5Trainer(T5Trainer):
     
     def __get_clamped_mean(self, tensor, min_value=5.0):
         return (tensor.clamp(min_value).mean()-min_value).mean()
-    
+
     def __scores_loss(self, outputs):
         means = []
         for s in outputs.encoder_scores[self.delete_gate_layer:]:

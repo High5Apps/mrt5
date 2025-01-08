@@ -184,16 +184,16 @@ if __name__ == "__main__":
     parser.add_argument('--delete_gate_layer', type=int, default=2, help='Layer to add delete gate after.')
 
     # Entropy regularization loss
-    parser.add_argument('--entropy_reg_coeff_1', type=float,
+    parser.add_argument('--entropy_reg_coeff_1', type=float, default=0.0,
                         help='First coefficient for entropy regularization.')
-    parser.add_argument('--entropy_reg_coeff_2', type=float,
+    parser.add_argument('--entropy_reg_coeff_2', type=float, default=0.0,
                         help='Second coefficient for entropy regularization.')
     
     # P-controller arguments
     parser.add_argument('--target_deletion_rate', type=float, default=None,)
     parser.add_argument('--controller_p', type=float, default=0.5,)
     parser.add_argument('--controller_i', type=float, default=0.00001,)
-    parser.add_argument('--controller_step', type=int, default=10,)
+    parser.add_argument('--controller_step', type=int, default=1,)
 
     # RandomT5 specific arguments
     parser.add_argument('--random_deletion_probability', type=float, default=0.5,
@@ -237,12 +237,6 @@ if __name__ == "__main__":
     if args.eval_steps % args.logging_steps != 0:
         raise ValueError(
             "logging_steps should divide eval_steps for logging to work correctly.")
-
-    if "entropy_reg" in args.loss_function and \
-        (args.entropy_reg_coeff_1 is None or
-         args.entropy_reg_coeff_2 is None):
-        raise ValueError(
-            "Entropy regularization loss requires both entropy_reg_coeff_1 and entropy_reg_coeff_2 to be specified.")
 
     if args.train_from_scratch and args.model_path is not None:
         raise ValueError(
@@ -405,80 +399,46 @@ if __name__ == "__main__":
         torch_compile=True,
         report_to=[] if args.disable_wandb else "wandb",
         run_name=run_name,
-        delete_gate_loss_coeff=args.delete_gate_loss_coeff,
-        scores_loss_coeff=args.scores_loss_coeff,
         remove_unused_columns=False,
-        entropy_reg_coeff_1=args.entropy_reg_coeff_1,
-        entropy_reg_coeff_2=args.entropy_reg_coeff_2,
+        delete_gate_loss_coeff=args.delete_gate_loss_coeff, # coefficient for delete gate loss
+        loss_function=args.loss_function,                   # loss function for delete gate
+        hard_delete_train_prob=args.hard_delete_train_prob, # hard deletion probability
+        regularizer_delay=args.regularizer_delay,           # regularizer delay
+        target_deletion_rate=args.target_deletion_rate,     # target deletion rate
+        controller_p=args.controller_p,                     # Controller value
+        controller_i=args.controller_i,                     # Controller value
+        controller_step=args.controller_step,               # P-controller step
+        scores_loss_coeff=args.scores_loss_coeff,           # coefficient for scores loss   
+        entropy_reg_coeff_1=args.entropy_reg_coeff_1,       # coefficient for entropy regularization
+        entropy_reg_coeff_2=args.entropy_reg_coeff_2,       # coefficient for entropy regularization
     )
 
     # Initialize the Trainer
     if args.model_type in ('MrT5', 'LogSigmoidMrT5'):
-        trainer = MrT5Trainer(
-            model=model,
-            tokenizer=tokenizer,
-            args=training_args,                                 # training arguments, defined above
-            train_dataset=train_dataset,                        # training dataset
-            eval_dataset=eval_dataset,                          # evaluation dataset
-            data_collator=collator,                             # custom data collator
-            loss_function=args.loss_function,                   # loss function for delete gate
-            hard_delete_train_prob=args.hard_delete_train_prob, # hard deletion probability
-            regularizer_delay=args.regularizer_delay,           # regularizer delay
-            target_deletion_rate=args.target_deletion_rate,     # target deletion rate
-            controller_p=args.controller_p,                     # Controller value
-            controller_i=args.controller_i,                     # Controller value
-            controller_step=args.controller_step,           # P-controller step
-        )
+        Trainer = MrT5Trainer
     elif args.model_type in ('RandomT5', 'FixedT5'):
-        trainer = BaselineMrT5Trainer(
-            model=model,
-            tokenizer=tokenizer,
-            args=training_args,                     # training arguments, defined above
-            train_dataset=train_dataset,            # training dataset
-            eval_dataset=eval_dataset,              # evaluation dataset
-            data_collator=collator,                 # the custom data collator
-            loss_function=args.loss_function,       # loss function for delete gate
-        )
+        Trainer = BaselineMrT5Trainer
     elif args.model_type == 'DecoderBaselineT5':
-        trainer = DecoderBaselineT5Trainer(
-            model=model,
-            tokenizer=tokenizer,
-            args=training_args,                     # training arguments, defined above
-            train_dataset=train_dataset,            # training dataset
-            eval_dataset=eval_dataset,              # evaluation dataset
-            data_collator=collator,                 # the custom data collator
-        )
+        Trainer = DecoderBaselineT5Trainer
     elif args.model_type == 'T5':
-        trainer = T5Trainer(
-            model=model,
-            tokenizer=tokenizer,
-            args=training_args,                     # training arguments, defined above
-            train_dataset=train_dataset,            # training dataset
-            eval_dataset=eval_dataset,              # evaluation dataset
-            data_collator=collator,                 # the custom data collator
-        )
+        Trainer = T5Trainer
     elif args.model_type == 'BPT5':
-        trainer = BPT5Trainer(
-            model=model,
-            tokenizer=tokenizer,
-            args=training_args,                     # training arguments, defined above
-            train_dataset=train_dataset,            # training dataset
-            eval_dataset=eval_dataset,              # evaluation dataset
-            data_collator=collator,                 # the custom data collator
-        )
+        Trainer = BPT5Trainer
     elif args.model_type == 'CanineT5':
-        trainer = CanineT5Trainer(
-            model=model,
-            tokenizer=tokenizer,
-            args=training_args,                     # training arguments, defined above
-            train_dataset=train_dataset,            # training dataset
-            eval_dataset=eval_dataset,              # evaluation dataset
-            data_collator=collator,                 # the custom data collator
-        )
+        Trainer = CanineT5Trainer
     else:
         raise ValueError(
             f"Model type must be one of {', '.join(MODEL_ARCHITECTURES)}.")
 
+    trainer = Trainer(
+        model=model,
+        tokenizer=tokenizer,
+        args=training_args,
+        train_dataset=train_dataset,
+        eval_dataset=eval_dataset,
+        data_collator=collator,
+    )
+    
     print("Training the model...")
     # Train the model
     trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
