@@ -14,6 +14,7 @@ kallini*.out
 *runs.md
 eval_results/
 figures/
+deletion_patterns/
 
 # C extensions
 *.so

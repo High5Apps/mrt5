@@ -93,13 +93,8 @@ class MergeABCDataCollator(DiagnosticDataCollator):
 
         for text in [feature['text'] for feature in features]:
 
-            # Insert A, B, and C independently into text
-            input_text = self.insert_subsequences(text, "A")
-            input_text = self.insert_subsequences(input_text, "B")
-            input_text = self.insert_subsequences(input_text, "C")
-
             # Insert ABC sequences into text
-            input_text = self.insert_subsequences(input_text, "ABC")
+            input_text = self.insert_subsequences(text, "ABC")
 
             # Replace ABC with D in the labels
             label_text = re.sub(r'ABC', 'D', input_text)
