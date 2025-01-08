@@ -43,7 +43,7 @@ class MrT5Config(T5Config):
         fixed_deletion_amount=0.5,
         train_language="en",
         eval_language="en",
-        use_gumbel_noise=True,
+        use_gumbel_noise=False,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
@@ -382,15 +382,21 @@ class MrT5Attention(T5Attention):
             else:
                 position_bias_masked = position_bias
 
-            scores += position_bias_masked
+            scores = scores + position_bias_masked
+
         #### NEW CODE ####
         # If there is no position bias, add attention mask to scores directly
         elif mask is not None:
-            scores += mask
+            scores = scores + mask
+
+        #### NEW CODE ####
+        # Log scores to return for loss calculation
+        scores_to_return = scores
+        #### NEW CODE ####
 
         # Apply the mask from the delete gate
         if delete_gate_mask is not None:
-            scores += delete_gate_mask.squeeze(-1).unsqueeze(-2).unsqueeze(-2)
+            scores = scores + delete_gate_mask.squeeze(-1).unsqueeze(-2).unsqueeze(-2)
 
         if self.use_softmax1:
             attn_weights = softmax1(scores.float(), dim=-1).type_as(
@@ -420,7 +426,7 @@ class MrT5Attention(T5Attention):
             (present_key_value_state,) + (position_bias,)
 
         if output_attentions:
-            attentions_keys_queries = (attn_weights, key_states, query_states, value_states, scores)
+            attentions_keys_queries = (attn_weights, key_states, query_states, value_states, scores_to_return)
             outputs = outputs + (attentions_keys_queries,)
 
         return outputs
@@ -666,10 +672,10 @@ class MrT5Block(nn.Module):
             delete_gate_mask = delete_gate_values
 
             # Raise error if all tokens are deleted in any sequence in batch
-            # if (delete_gate_values < self.deletion_threshold).all():
-            #     raise ValueError("All tokens are deleted in this batch. " + \
-            #                      "Please adjust the deletion rate or " + \
-            #                      "alpha hyperparameter.")
+            if (delete_gate_values < self.deletion_threshold).all():
+                raise ValueError("All tokens are deleted in this batch. " + \
+                                 "Please adjust the deletion rate or " + \
+                                 "alpha hyperparameter.")
 
             # Apply hard deletion
             if hard_delete:
