@@ -19,7 +19,7 @@ FINETUNE_DATASET_PATH = f"{BASE_PATH}/finetune_datasets"
 DIAGNOSTIC_TASKS = ['copy', 'vowel_removal',
                     'contextual_vowel_removal', 'merge_ABC']
 LM_TASK = "span_corruption"
-FINETUNE_TASKS = ['xnli']
+FINETUNE_TASKS = ['xnli', 'xquad']
 CHAR_IIT_TASKS_AND_INFO = {
     'spelling_correction_contextual':
         {

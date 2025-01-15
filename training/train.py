@@ -25,7 +25,7 @@ from trainer import (
     CanineT5Trainer,
 )
 from datasets import load_dataset
-from data.data_collator_finetuning import XNLIDataCollator
+from data.data_collator_finetuning import XNLIDataCollator, XQUADDataCollator
 from models.modeling_mrt5 import MrT5Config
 from models.modeling_t5 import T5Config
 from models.modeling_bpt5 import BPT5Config
@@ -372,7 +372,11 @@ if __name__ == "__main__":
     elif args.training_task == 'xnli':
         train_dataset = load_dataset("xnli", "en", split="train").shuffle(seed=args.random_seed)
         eval_dataset = load_dataset("xnli", "en", split="validation").shuffle(seed=args.random_seed)
-        collator = XNLIDataCollator(tokenizer, max_length=args.input_seq_length)
+        collator = XNLIDataCollator(tokenizer, max_length=1024)
+    elif args.training_task == 'xquad':
+        train_dataset = load_dataset("squad", split="train").shuffle(seed=args.random_seed)
+        eval_dataset = load_dataset("squad", split="validation").shuffle(seed=args.random_seed)
+        collator = XQUADDataCollator(tokenizer, max_length=2048)
 
     # Define training arguments
     training_args = MrT5TrainingArguments(
