@@ -45,7 +45,7 @@ class XNLIDataCollator(FinetuneTaskDataCollator):
         batch = self.tokenize_batch(input_texts, label_texts)
         return batch
 
-class XQUADDataCollator(FinetuneTaskDataCollator):
+class QADataCollator(FinetuneTaskDataCollator):
     def __init__(self, tokenizer, padding='longest', max_length=2048, truncation=True):
         super().__init__(tokenizer, padding, max_length, truncation)
 
