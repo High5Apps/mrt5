@@ -339,8 +339,8 @@ class MrT5Trainer(T5Trainer):
         else:
             # Adjust delete gate loss coefficient based on percentage of tokens deleted
             if self.target_deletion_rate is not None and self.state.global_step % self.controller_step == 0:
-                self.delete_gate_loss_coeff = self.i_controller(
-                    self.target_deletion_rate, percent_non_pad_deleted_tokens / 100, self.delete_gate_loss_coeff)
+                self.delete_gate_loss_coeff = self.pi_controller(
+                    self.target_deletion_rate, percent_non_pad_deleted_tokens / 100)
             loss = cross_entropy_loss + delete_gate_loss
 
         if self.scores_loss_coeff > 0:
