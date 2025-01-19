@@ -442,3 +442,20 @@ SUBSET_LANGUAGES = {
     "sw": "Swahili",
     "ur": "Urdu",
 }
+
+XNLI_LANGUAGES = SUBSET_LANGUAGES
+
+XQUAD_LANGUAGES = {
+    "ar": "Arabic",
+    "de": "German",
+    "el": "Greek",
+    "en": "English",
+    "es": "Spanish",
+    "hi": "Hindi",
+    "ru": "Russian",
+    "th": "Thai",
+    "tr": "Turkish",
+    "vi": "Vietnamese",
+    "zh": "Chinese",
+    "ro": "Romanian",
+}

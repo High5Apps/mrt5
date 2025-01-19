@@ -25,7 +25,7 @@ from functools import partial
 
 def load_eval_dataset(language, batch_size):
     # Load tokenizer for the model
-    tokenizer = AutoTokenizer.from_pretrained('google/byt5-base')
+    tokenizer = AutoTokenizer.from_pretrained('google/byt5-small')
 
     # Initialize the XNLI data collator
     collator = XNLIDataCollator(tokenizer=tokenizer)
@@ -42,7 +42,7 @@ def load_eval_dataset(language, batch_size):
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(
-        description='Test basic evaluation metrics for ByT5/MrT5 models.')
+        description='Test ByT5/MrT5 models on XNLI task.')
     parser.add_argument('model_name', type=str,
                         help='Name of model/run to load.')
     parser.add_argument('model_type',
@@ -57,8 +57,6 @@ if __name__ == "__main__":
                         help='Random seed for reproducibility.')
     parser.add_argument('--deletion_threshold', type=float,
                         default=-15.0, help='Deletion gate threshold.')
-
-    # Eval arguments
     parser.add_argument('--hard_delete', action='store_true', help='Use hard deletion instead of soft deletion.')
     parser.add_argument('--per_device_eval_batch_size', type=int,
                         default=64, help='Batch size per device during evaluation.')
