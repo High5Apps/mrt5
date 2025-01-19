@@ -193,9 +193,12 @@ if __name__ == "__main__":
                 start_time = time.time()
 
                 for batch in tqdm(eval_dataloader, total=args.num_batches):
-                    # Compute the loss
-                    loss, percent_deleted_tokens, new_seq_len = metrics_function(
-                        model, batch)
+                    # Get input IDs and labels
+                    input_ids, labels = get_input_ids_and_labels(batch)
+
+                    # Compute metrics
+                    loss, percent_deleted_tokens, new_seq_len, _, _ = \
+                                    metrics_function(model, input_ids, labels)
 
                     # Update the total metrics
                     total_loss += loss
