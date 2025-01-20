@@ -449,6 +449,7 @@ if __name__ == "__main__":
         data_collator=collator,
     )
     
-    print("Training the model...")
+    accelerator.print("Training the model...")
     # Train the model
     trainer.train(resume_from_checkpoint=args.resume_from_checkpoint)
+    model.push_to_hub(run_name)
