@@ -1,36 +1,37 @@
-# xquad_eval.py
+# qa_eval.py
 # Author: Julie Kallini
 #
 # The methods normalize_answer, f1_score, exact_match_score,
-# metric_max_over_ground_truths, and evaluate_xquad are adapted
+# metric_max_over_ground_truths, and evaluate_qa are adapted
 # from the official evaluation script of SQuAD v1.1:
 # https://raw.githubusercontent.com/allenai/bi-att-flow/master/squad/evaluate-v1.1.py
 
 import sys
 sys.path.append('..')
 
-import time
-import os
-import torch
-import argparse
-import string
-import re
-import pandas as pd
-from tqdm import tqdm
-from collections import Counter
-from torch.utils.data import DataLoader
-from transformers import AutoTokenizer
-from datasets import load_dataset
+from functools import partial
+from data.data_collator_finetuning import QADataCollator
 from utils import (
-    XQUAD_LANGUAGES as LANGUAGES,
+    XQUAD_LANGUAGES,
+    TYDIQA_LANGUAGES,
     load_model_from_path,
     mrt5_compute_metrics,
     byt5_compute_metrics,
     bpt5_compute_metrics,
     MODEL_ARCHITECTURES,
 )
-from data.data_collator_finetuning import QADataCollator
-from functools import partial
+from datasets import load_dataset
+from transformers import AutoTokenizer
+from torch.utils.data import DataLoader
+from collections import Counter
+from tqdm import tqdm
+import pandas as pd
+import re
+import string
+import argparse
+import torch
+import os
+import time
 
 
 def normalize_answer(s):
@@ -91,11 +92,13 @@ def byt5_compute_metrics(model, input_ids, ground_truths):
     # Get model outputs
     outputs = model.generate(
         input_ids=input_ids,
+        max_length=1024,
         output_hidden_states=True,
         return_dict_in_generate=True)
 
     # Decode the prediction and get the evaluation metrics
-    prediction = tokenizer.decode(outputs['sequences'][0], skip_special_tokens=False)
+    prediction = tokenizer.decode(
+        outputs['sequences'][0], skip_special_tokens=True)
     exact_match, f1 = evaluate_qa(prediction, ground_truths[0])
 
     # Return cross entropy loss, accuracy, and percent deleted tokens
@@ -107,17 +110,20 @@ def mrt5_compute_metrics(model, input_ids, ground_truths, deletion_threshold, ha
     # Get model outputs
     outputs = model.generate(
         input_ids=input_ids,
+        max_length=1024,
         output_hidden_states=True,
-        return_dict_in_generate=True, 
+        return_dict_in_generate=True,
         hard_delete=hard_delete,
         deletion_threshold=deletion_threshold)
-    
+
     # Decode the prediction and get the evaluation metrics
-    prediction = tokenizer.decode(outputs['sequences'][0], skip_special_tokens=True)
+    prediction = tokenizer.decode(
+        outputs['sequences'][0], skip_special_tokens=True)
     exact_match, f1 = evaluate_qa(prediction, ground_truths)
 
     # Get the new sequence length
-    percent_deleted_tokens = outputs['encoder_hidden_states'][-1].shape[1] / input_ids.shape[1] * 100
+    percent_deleted_tokens = outputs['encoder_hidden_states'][-1].shape[1] / \
+        input_ids.shape[1] * 100
 
     # Return cross entropy loss, accuracy, and percent deleted tokens
     return percent_deleted_tokens.item(), exact_match, f1
@@ -128,15 +134,18 @@ def bpt5_compute_metrics(model, input_ids, ground_truths):
     # Get model outputs
     outputs = model.generate(
         input_ids=input_ids,
+        max_length=1024,
         output_hidden_states=True,
         return_dict_in_generate=True)
-    
+
     # Decode the prediction and get the evaluation metrics
-    prediction = tokenizer.decode(outputs['sequences'][0], skip_special_tokens=True)
+    prediction = tokenizer.decode(
+        outputs['sequences'][0], skip_special_tokens=True)
     exact_match, f1 = evaluate_qa(prediction, ground_truths)
 
     # Get the new sequence length
-    percent_deleted_tokens = outputs['encoder_hidden_states'][-1].shape[1] / input_ids.shape[1] * 100
+    percent_deleted_tokens = outputs['encoder_hidden_states'][-1].shape[1] / \
+        input_ids.shape[1] * 100
 
     # Return cross entropy loss, accuracy, and percent deleted tokens
     return percent_deleted_tokens.item(), exact_match, f1
@@ -146,19 +155,73 @@ def load_eval_dataset(language, batch_size):
     # Initialize the QA data collator
     collator = QADataCollator(tokenizer=tokenizer)
 
-    # Load XQUAD test set from Hugging Face
-    dataset = load_dataset("google/xquad", f"xquad.{language}", split="validation")
+    if args.task == 'xquad':
+        # Load XQUAD test set from Hugging Face
+        dataset = load_dataset(
+            "google/xquad", f"xquad.{language}", split="validation")
+    elif args.task == 'tydiqa':
+        # Load TYDIQA test set from Hugging Face
+        dataset = load_dataset('tydiqa', 'secondary_task', split='validation')
+        # Filter by language
+        dataset = dataset.filter(lambda example: example['id'].startswith(
+            TYDIQA_LANGUAGES[language].lower()))
 
     # Create DataLoader
-    dataloader = DataLoader(dataset, batch_size=batch_size, collate_fn=collator)
+    dataloader = DataLoader(
+        dataset, batch_size=batch_size, collate_fn=collator)
 
     return dataloader
+
+
+def eval_loop(eval_dataloader):
+    # Initialize the total loss
+    total_f1 = 0.0
+    total_exact_match = 0.0
+    total_percent_deleted_tokens = 0.0
+
+    print(f"Number of batches: {len(eval_dataloader)}")
+    print(f"Number of examples: {len(eval_dataloader.dataset)}")
+
+    # Start the timer
+    start_time = time.time()
+
+    num_batches = len(eval_dataloader)
+    for batch in tqdm(eval_dataloader):
+        input_ids = batch["input_ids"].to(device)
+        all_answers = batch["all_answers"]
+
+        # Compute metrics
+        percent_deleted_tokens, exact_match, f1 = metrics_function(
+            model, input_ids, all_answers)
+
+        # Update the total metrics
+        total_exact_match += exact_match
+        total_f1 += f1
+        total_percent_deleted_tokens += percent_deleted_tokens
+
+    # End the timer
+    end_time = time.time()
+    eval_runtime = (end_time - start_time) / \
+        len(eval_dataloader.dataset) * 1000
+
+    average_exact_match = total_exact_match / num_batches * 100
+    average_f1 = total_f1 / num_batches * 100
+    average_percent_deleted_tokens = total_percent_deleted_tokens / num_batches
+
+    print(f"Exact match: {average_exact_match}")
+    print(f"F1: {average_f1}")
+    print(f"Percent deleted tokens: {average_percent_deleted_tokens}")
+    print(f"Eval runtime: {eval_runtime} seconds")
+    print()
+
+    return average_exact_match, average_f1, average_percent_deleted_tokens, eval_runtime
 
 
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(
-        description='Test ByT5/MrT5 models on XQUAD.')
+        description='Test ByT5/MrT5 models on question answering benchmarks.')
+    parser.add_argument('task', type=str, choices=['xquad', 'tydiqa'],)
     parser.add_argument('model_name', type=str,
                         help='Name of model/run to load.')
     parser.add_argument('model_type',
@@ -175,14 +238,14 @@ if __name__ == "__main__":
                         default=-15.0, help='Deletion gate threshold.')
 
     # Eval arguments
-    parser.add_argument('--hard_delete', action='store_true', help='Use hard deletion instead of soft deletion.')
-
+    parser.add_argument('--hard_delete', action='store_true',
+                        help='Use hard deletion instead of soft deletion.')
 
     args = parser.parse_args()
 
     print("Loading model...")
     model = load_model_from_path(args.model_type, model_name=args.model_name,
-                                 training_task=f"xquad", seed=args.random_seed, ckpt=args.checkpoint)
+                                 training_task=args.task, seed=args.random_seed, ckpt=args.checkpoint)
 
     # Load tokenizer
     tokenizer = AutoTokenizer.from_pretrained('google/byt5-small')
@@ -214,44 +277,16 @@ if __name__ == "__main__":
     size_data = []
 
     with torch.no_grad():
+        LANGUAGES = XQUAD_LANGUAGES if args.task == 'xquad' else TYDIQA_LANGUAGES
         for language in LANGUAGES:
             print(f"Evaluating on {LANGUAGES[language]}...")
             # Load the evaluation dataset
             eval_dataloader = load_eval_dataset(
                 language, batch_size=1)
 
-            # Initialize the total loss
-            total_f1 = 0.0
-            total_exact_match = 0.0
-            total_percent_deleted_tokens = 0.0
-
-
-            print(f"Number of batches: {len(eval_dataloader)}")
-            print(f"Number of examples: {len(eval_dataloader.dataset)}")
-
-            # Start the timer
-            start_time = time.time()
-
-            num_batches = len(eval_dataloader)
-            for batch in tqdm(eval_dataloader):
-                input_ids = batch["input_ids"].to(device)
-                all_answers = batch["all_answers"]
-
-                # Compute metrics
-                percent_deleted_tokens, exact_match, f1 = metrics_function(model, input_ids, all_answers)
-
-                # Update the total metrics
-                total_exact_match += exact_match
-                total_f1 += f1
-                total_percent_deleted_tokens += percent_deleted_tokens
-
-            # End the timer
-            end_time = time.time()
-            eval_runtime = (end_time - start_time) / len(eval_dataloader.dataset) * 1000
-
-            average_exact_match = total_exact_match / num_batches * 100
-            average_f1 = total_f1 / num_batches * 100
-            average_percent_deleted_tokens = total_percent_deleted_tokens / num_batches
+            # Evaluate the model
+            average_exact_match, average_f1, average_percent_deleted_tokens, \
+                eval_runtime = eval_loop(eval_dataloader)
 
             exact_match_data.append(average_exact_match)
             f1_data.append(average_f1)
@@ -259,12 +294,6 @@ if __name__ == "__main__":
                 average_percent_deleted_tokens)
             runtime_data.append(eval_runtime)
             size_data.append(len(eval_dataloader.dataset))
-
-            print(f"Exact match: {average_exact_match}")
-            print(f"F1: {average_f1}")
-            print(f"Percent deleted tokens: {average_percent_deleted_tokens}")
-            print(f"Eval runtime: {eval_runtime} seconds")
-            print()
 
         # Save the evaluation metrics to a CSV file
         eval_metrics = pd.DataFrame({
@@ -277,11 +306,11 @@ if __name__ == "__main__":
             'Size': size_data,
         })
 
-        # Make directory for eval results
-        os.makedirs(
-            f"eval_results/xquad/{args.model_type}", exist_ok=True)
+    # Make directory for eval results
+    os.makedirs(
+        f"eval_results/{args.task}/{args.model_type}", exist_ok=True)
 
-        outfile = f"eval_results/xquad/{args.model_type}/{args.model_name}_seed{args.random_seed}.csv"
-        eval_metrics.to_csv(outfile, index=False)
+    outfile = f"eval_results/{args.task}/{args.model_type}/{args.model_name}_seed{args.random_seed}.csv"
+    eval_metrics.to_csv(outfile, index=False)
 
-        print(f"Saved evaluation metrics to: {outfile}")
+    print(f"Saved evaluation metrics to: {outfile}")

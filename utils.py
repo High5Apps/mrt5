@@ -459,3 +459,14 @@ XQUAD_LANGUAGES = {
     "zh": "Chinese",
     "ro": "Romanian",
 }
+
+TYDIQA_LANGUAGES = {
+    "ar": "Arabic",
+    "bn": "Bengali",
+    "te": "Telugu",
+    "fi": "Finnish",
+    "sw": "Swahili",
+    "ko": "Korean",
+    "id": "Indonesian",
+    "en": "English",
+}

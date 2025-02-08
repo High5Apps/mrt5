@@ -5,7 +5,7 @@ import sys
 sys.path.append('..')
 
 from utils import (
-    SUBSET_LANGUAGES as LANGUAGES,
+    ALL_LANGUAGES as LANGUAGES,
     get_task_dataset,
     load_model_from_path,
     MODEL_ARCHITECTURES,

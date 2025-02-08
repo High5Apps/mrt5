@@ -142,12 +142,6 @@ class T5Trainer(Trainer):
         return (loss, outputs) if return_outputs else loss
 
     def log(self, logs):
-        # Log the delete gate histogram
-        if self.model.training and wandb.run is not None \
-                and "delete_gate_histogram" in self.metrics:
-            wandb.log({f'delete_gate_output_hist': wandb.Histogram(
-                self.metrics["delete_gate_histogram"], num_bins=10)}, step=self.state.global_step+1)
-
         # Format the metrics to log
         formatted_metrics = {k: round(statistics.fmean(v), 4)
                              for k, v in self.metrics.items() if "histogram" not in k and len(v) > 0}
