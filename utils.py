@@ -314,6 +314,34 @@ def bpt5_compute_metrics(model, input_ids, labels):
     # Return cross entropy loss, accuracy, and percent deleted tokens
     return outputs.loss.item(), percent_deleted_tokens, new_seq_length, seq_accuracy, token_accuracy
 
+
+def canine_compute_metrics(model, input_ids, labels):
+
+    # Set pad tokens to -100 so they are not counted in the loss
+    labels[labels == 0] = -100
+
+    # Get model outputs
+    outputs = model(
+        input_ids=input_ids,
+        labels=labels,
+        output_hidden_states=True)
+
+    # Count on average how many tokens are deleted
+    _, seq_len = input_ids.shape[0:2]
+    percent_deleted_tokens = (1.0 - outputs.encoder_last_hidden_state.shape[1] / \
+            seq_len) * 100
+
+    # Calculate sequence and token accuracy
+    seq_accuracy = calculate_seq_accuracy(labels, outputs)
+    token_accuracy = calculate_token_accuracy(labels, outputs)
+
+    # Get the new sequence length
+    new_seq_length = outputs.encoder_last_hidden_state.shape[1]
+
+    # Return cross entropy loss, accuracy, and percent deleted tokens
+    return outputs.loss.item(), percent_deleted_tokens, new_seq_length, seq_accuracy, token_accuracy
+
+
 ALL_LANGUAGES = {
     "af": "Afrikaans",
     "am": "Amharic",

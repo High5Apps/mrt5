@@ -122,14 +122,14 @@ def mrt5_compute_metrics(model, input_ids, ground_truths, deletion_threshold, ha
     exact_match, f1 = evaluate_qa(prediction, ground_truths)
 
     # Get the new sequence length
-    percent_deleted_tokens = outputs['encoder_hidden_states'][-1].shape[1] / \
-        input_ids.shape[1] * 100
+    percent_deleted_tokens = (1.0 - outputs['encoder_hidden_states'][-1].shape[1] / \
+        input_ids.shape[1]) * 100
 
     # Return cross entropy loss, accuracy, and percent deleted tokens
     return percent_deleted_tokens.item(), exact_match, f1
 
 
-def bpt5_compute_metrics(model, input_ids, ground_truths):
+def bp_canine_compute_metrics(model, input_ids, ground_truths):
 
     # Get model outputs
     outputs = model.generate(
@@ -144,11 +144,19 @@ def bpt5_compute_metrics(model, input_ids, ground_truths):
     exact_match, f1 = evaluate_qa(prediction, ground_truths)
 
     # Get the new sequence length
-    percent_deleted_tokens = outputs['encoder_hidden_states'][-1].shape[1] / \
-        input_ids.shape[1] * 100
+    percent_deleted_tokens = (1.0 - outputs['encoder_hidden_states'][-1].shape[1] / \
+        input_ids.shape[1]) * 100
 
     # Return cross entropy loss, accuracy, and percent deleted tokens
     return percent_deleted_tokens.item(), exact_match, f1
+
+
+def bpt5_compute_metrics(model, input_ids, ground_truths):
+    return bp_canine_compute_metrics(model, input_ids, ground_truths)
+
+
+def canine_compute_metrics(model, input_ids, ground_truths):
+    return bp_canine_compute_metrics(model, input_ids, ground_truths)
 
 
 def load_eval_dataset(language, batch_size):
@@ -266,6 +274,8 @@ if __name__ == "__main__":
                                    hard_delete=args.hard_delete)
     elif args.model_type == 'BPT5':
         metrics_function = bpt5_compute_metrics
+    elif args.model_type == 'CanineT5':
+        metrics_function = canine_compute_metrics
     else:
         raise ValueError(
             "Model type must be 'T5' or 'MrT5'.")

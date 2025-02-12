@@ -18,6 +18,7 @@ from utils import (
     mrt5_compute_metrics,
     byt5_compute_metrics,
     bpt5_compute_metrics,
+    canine_compute_metrics,
     MODEL_ARCHITECTURES,
 )
 from data.data_collator_finetuning import XNLIDataCollator
@@ -84,6 +85,8 @@ if __name__ == "__main__":
                                    hard_delete=args.hard_delete)
     elif args.model_type == 'BPT5':
         metrics_function = bpt5_compute_metrics
+    elif args.model_type == 'CanineT5':
+        metrics_function = canine_compute_metrics
     else:
         raise ValueError(
             "Model type must be 'T5' or 'MrT5'.")

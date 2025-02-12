@@ -5,13 +5,14 @@ import sys
 sys.path.append('..')
 
 from utils import (
-    ALL_LANGUAGES as LANGUAGES,
+    SUBSET_LANGUAGES as LANGUAGES,
     get_task_dataset,
     load_model_from_path,
     MODEL_ARCHITECTURES,
     byt5_compute_metrics,
     mrt5_compute_metrics,
     bpt5_compute_metrics,
+    canine_compute_metrics,
 )
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -105,6 +106,8 @@ if __name__ == "__main__":
                                    hard_delete=args.hard_delete)
     elif args.model_type == 'BPT5':
         metrics_function = bpt5_compute_metrics
+    elif args.model_type == 'CanineT5':
+        metrics_function = canine_compute_metrics
     else:
         raise ValueError(
             f"Model type must be {', '.join(MODEL_ARCHITECTURES)}.")
