@@ -106,6 +106,7 @@ if __name__ == "__main__":
             # Initialize the total loss
             total_accuracy = 0.0
             total_percent_deleted_tokens = 0.0
+            total_examples = 0
 
             print(f"Number of batches: {len(eval_dataloader)}")
             print(f"Number of examples: {len(eval_dataloader.dataset)}")
@@ -113,24 +114,27 @@ if __name__ == "__main__":
             # Start the timer
             start_time = time.time()
 
-            num_batches = len(eval_dataloader)
             for batch in tqdm(eval_dataloader):
+                batch_size = len(batch["input_ids"])
                 input_ids = batch["input_ids"].to(device)
                 labels = batch["labels"].to(device)
+                attn_mask = batch["attention_mask"].to(device)
 
                 # Compute metrics
-                acc, percent_deleted_tokens = metrics_function(model, input_ids, labels)
+                _, percent_deleted_tokens, _, acc, _ = \
+                    metrics_function(model, input_ids, labels, attention_mask=attn_mask)
 
                 # Update the total metrics
-                total_accuracy += acc
-                total_percent_deleted_tokens += percent_deleted_tokens
+                total_accuracy += acc * batch_size
+                total_examples += batch_size
+                total_percent_deleted_tokens += percent_deleted_tokens * batch_size
 
             # End the timer
             end_time = time.time()
             eval_runtime = (end_time - start_time) / len(eval_dataloader.dataset) * 1000
 
-            average_seq_accuracy = total_accuracy / num_batches * 100
-            average_percent_deleted_tokens = total_percent_deleted_tokens / num_batches
+            average_seq_accuracy = total_accuracy / len(eval_dataloader.dataset) * 100
+            average_percent_deleted_tokens = total_percent_deleted_tokens / len(eval_dataloader.dataset)
 
             seq_accuracy_data.append(average_seq_accuracy)
             percent_deleted_tokens_data.append(
@@ -139,8 +143,10 @@ if __name__ == "__main__":
             size_data.append(len(eval_dataloader.dataset))
 
             print(f"Seq Accuracy: {average_seq_accuracy}")
+            print(f"Total correct: {total_accuracy}")
+            print(f"Total examples: {total_examples}")
             print(f"Percent deleted tokens: {average_percent_deleted_tokens}")
-            print(f"Eval runtime: {eval_runtime} seconds")
+            print(f"Eval runtime: {eval_runtime} milliseconds")
             print()
 
         # Save the evaluation metrics to a CSV file

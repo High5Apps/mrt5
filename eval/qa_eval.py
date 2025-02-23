@@ -88,7 +88,6 @@ def evaluate_qa(prediction, ground_truths):
 
 
 def byt5_compute_metrics(model, input_ids, ground_truths):
-
     # Get model outputs
     outputs = model.generate(
         input_ids=input_ids,
@@ -106,7 +105,6 @@ def byt5_compute_metrics(model, input_ids, ground_truths):
 
 
 def mrt5_compute_metrics(model, input_ids, ground_truths, deletion_threshold, hard_delete=True):
-
     # Get model outputs
     outputs = model.generate(
         input_ids=input_ids,
@@ -119,14 +117,14 @@ def mrt5_compute_metrics(model, input_ids, ground_truths, deletion_threshold, ha
     # Decode the prediction and get the evaluation metrics
     prediction = tokenizer.decode(
         outputs['sequences'][0], skip_special_tokens=True)
-    exact_match, f1 = evaluate_qa(prediction, ground_truths)
+    exact_match, f1 = evaluate_qa(prediction, ground_truths[0])
 
     # Get the new sequence length
     percent_deleted_tokens = (1.0 - outputs['encoder_hidden_states'][-1].shape[1] / \
         input_ids.shape[1]) * 100
 
     # Return cross entropy loss, accuracy, and percent deleted tokens
-    return percent_deleted_tokens.item(), exact_match, f1
+    return percent_deleted_tokens, exact_match, f1
 
 
 def bp_canine_compute_metrics(model, input_ids, ground_truths):
@@ -141,14 +139,14 @@ def bp_canine_compute_metrics(model, input_ids, ground_truths):
     # Decode the prediction and get the evaluation metrics
     prediction = tokenizer.decode(
         outputs['sequences'][0], skip_special_tokens=True)
-    exact_match, f1 = evaluate_qa(prediction, ground_truths)
+    exact_match, f1 = evaluate_qa(prediction, ground_truths[0])
 
     # Get the new sequence length
     percent_deleted_tokens = (1.0 - outputs['encoder_hidden_states'][-1].shape[1] / \
         input_ids.shape[1]) * 100
 
     # Return cross entropy loss, accuracy, and percent deleted tokens
-    return percent_deleted_tokens.item(), exact_match, f1
+    return percent_deleted_tokens, exact_match, f1
 
 
 def bpt5_compute_metrics(model, input_ids, ground_truths):

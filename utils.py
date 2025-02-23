@@ -234,7 +234,7 @@ def calculate_token_accuracy(labels, outputs):
     return accuracy
 
 
-def byt5_compute_metrics(model, input_ids, labels):
+def byt5_compute_metrics(model, input_ids, labels, attention_mask=None):
 
     # Set pad tokens to -100 so they are not counted in the loss
     labels[labels == 0] = -100
@@ -242,7 +242,8 @@ def byt5_compute_metrics(model, input_ids, labels):
     # Get model outputs
     outputs = model(input_ids=input_ids,
                     labels=labels,
-                    output_hidden_states=True)
+                    output_hidden_states=True,
+                    attention_mask=attention_mask)
     
     # Calculate sequence and token accuracy
     seq_accuracy = calculate_seq_accuracy(labels, outputs)
@@ -254,7 +255,7 @@ def byt5_compute_metrics(model, input_ids, labels):
     return outputs.loss.item(), 0.0, new_seq_length, seq_accuracy, token_accuracy
 
 
-def mrt5_compute_metrics(model, input_ids, labels, deletion_threshold, hard_delete=True):
+def mrt5_compute_metrics(model, input_ids, labels, deletion_threshold, hard_delete=True, attention_mask=None):
 
     # Set pad tokens to -100 so they are not counted in the loss
     labels[labels == 0] = -100
@@ -265,7 +266,8 @@ def mrt5_compute_metrics(model, input_ids, labels, deletion_threshold, hard_dele
         labels=labels,
         hard_delete=hard_delete,
         output_hidden_states=True,
-        deletion_threshold=deletion_threshold)
+        deletion_threshold=deletion_threshold,
+        attention_mask=attention_mask)
 
     # Get delete gate output
     delete_gate_output = outputs.delete_gate_output.squeeze(-1)
@@ -287,7 +289,7 @@ def mrt5_compute_metrics(model, input_ids, labels, deletion_threshold, hard_dele
     return outputs.loss.item(), percent_deleted_tokens.item(), new_seq_length, seq_accuracy, token_accuracy
 
 
-def bpt5_compute_metrics(model, input_ids, labels):
+def bpt5_compute_metrics(model, input_ids, labels, attention_mask=None):
 
     # Set pad tokens to -100 so they are not counted in the loss
     labels[labels == 0] = -100
@@ -296,7 +298,8 @@ def bpt5_compute_metrics(model, input_ids, labels):
     outputs = model(
         input_ids=input_ids,
         labels=labels,
-        output_hidden_states=True)
+        output_hidden_states=True,
+        attention_mask=attention_mask)
 
     # Count on average how many tokens are deleted
     hard_boundaries = outputs.hard_boundaries
@@ -315,7 +318,7 @@ def bpt5_compute_metrics(model, input_ids, labels):
     return outputs.loss.item(), percent_deleted_tokens, new_seq_length, seq_accuracy, token_accuracy
 
 
-def canine_compute_metrics(model, input_ids, labels):
+def canine_compute_metrics(model, input_ids, labels, attention_mask=None):
 
     # Set pad tokens to -100 so they are not counted in the loss
     labels[labels == 0] = -100
@@ -324,7 +327,8 @@ def canine_compute_metrics(model, input_ids, labels):
     outputs = model(
         input_ids=input_ids,
         labels=labels,
-        output_hidden_states=True)
+        output_hidden_states=True,
+        attention_mask=attention_mask)
 
     # Count on average how many tokens are deleted
     _, seq_len = input_ids.shape[0:2]
