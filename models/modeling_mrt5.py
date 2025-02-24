@@ -133,6 +133,7 @@ class SigmoidDeleteGate(nn.Module):
         self.feed_forward = nn.Linear(config.hidden_size, 1)
         self._init_weights(self.feed_forward)
         self.activation = ScaledSigmoid(config.sigmoid_mask_scale)
+        self.use_gumbel_noise = config.use_gumbel_noise
 
     def forward(self, hidden_states, input_ids):
         if self.has_layer_norm:
@@ -140,7 +141,7 @@ class SigmoidDeleteGate(nn.Module):
         delete_gate_logits = self.feed_forward(hidden_states)
 
         # Add gumbel noise to the delete gate logits
-        if self.training:
+        if self.training and self.use_gumbel_noise:
             gumbel_noise = gumbel_noise_like(delete_gate_logits)
             delete_gate_logits += gumbel_noise
 
