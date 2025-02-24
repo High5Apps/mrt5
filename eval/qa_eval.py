@@ -15,9 +15,7 @@ from utils import (
     XQUAD_LANGUAGES,
     TYDIQA_LANGUAGES,
     load_model_from_path,
-    mrt5_compute_metrics,
-    byt5_compute_metrics,
-    bpt5_compute_metrics,
+    measure_runtime_generate,
     MODEL_ARCHITECTURES,
 )
 from datasets import load_dataset
@@ -87,7 +85,7 @@ def evaluate_qa(prediction, ground_truths):
     return exact_match, f1
 
 
-def byt5_compute_metrics(model, input_ids, ground_truths):
+def byt5_compute_metrics(model, input_ids, ground_truths, include_runtime=False):
     # Get model outputs
     outputs = model.generate(
         input_ids=input_ids,
@@ -100,11 +98,17 @@ def byt5_compute_metrics(model, input_ids, ground_truths):
         outputs['sequences'][0], skip_special_tokens=True)
     exact_match, f1 = evaluate_qa(prediction, ground_truths[0])
 
+    if include_runtime:
+        # Only time the model's forward pass
+        model_runtime = measure_runtime_generate(model, input_ids=input_ids)
+    else:
+        model_runtime = 0.0
+
     # Return cross entropy loss, accuracy, and percent deleted tokens
-    return 0.0, exact_match, f1
+    return 0.0, exact_match, f1, model_runtime
 
 
-def mrt5_compute_metrics(model, input_ids, ground_truths, deletion_threshold, hard_delete=True):
+def mrt5_compute_metrics(model, input_ids, ground_truths, deletion_threshold, hard_delete=True, include_runtime=False):
     # Get model outputs
     outputs = model.generate(
         input_ids=input_ids,
@@ -123,11 +127,19 @@ def mrt5_compute_metrics(model, input_ids, ground_truths, deletion_threshold, ha
     percent_deleted_tokens = (1.0 - outputs['encoder_hidden_states'][-1].shape[1] / \
         input_ids.shape[1]) * 100
 
+    if include_runtime:
+        # Only time the model's forward pass
+        model_runtime = measure_runtime_generate(model, input_ids=input_ids, 
+                                                 hard_delete=hard_delete, 
+                                                 deletion_threshold=deletion_threshold)
+    else:
+        model_runtime = 0.0
+
     # Return cross entropy loss, accuracy, and percent deleted tokens
-    return percent_deleted_tokens, exact_match, f1
+    return percent_deleted_tokens, exact_match, f1, model_runtime
 
 
-def bp_canine_compute_metrics(model, input_ids, ground_truths):
+def bp_canine_compute_metrics(model, input_ids, ground_truths, include_runtime=False):
 
     # Get model outputs
     outputs = model.generate(
@@ -145,8 +157,14 @@ def bp_canine_compute_metrics(model, input_ids, ground_truths):
     percent_deleted_tokens = (1.0 - outputs['encoder_hidden_states'][-1].shape[1] / \
         input_ids.shape[1]) * 100
 
+    if include_runtime:
+        # Only time the model's forward pass
+        model_runtime = measure_runtime_generate(model, input_ids=input_ids)
+    else:
+        model_runtime = 0.0
+
     # Return cross entropy loss, accuracy, and percent deleted tokens
-    return percent_deleted_tokens, exact_match, f1
+    return percent_deleted_tokens, exact_match, f1, model_runtime
 
 
 def bpt5_compute_metrics(model, input_ids, ground_truths):
@@ -184,12 +202,10 @@ def eval_loop(eval_dataloader):
     total_f1 = 0.0
     total_exact_match = 0.0
     total_percent_deleted_tokens = 0.0
+    total_time = 0.0
 
     print(f"Number of batches: {len(eval_dataloader)}")
     print(f"Number of examples: {len(eval_dataloader.dataset)}")
-
-    # Start the timer
-    start_time = time.time()
 
     num_batches = len(eval_dataloader)
     for batch in tqdm(eval_dataloader):
@@ -197,18 +213,16 @@ def eval_loop(eval_dataloader):
         all_answers = batch["all_answers"]
 
         # Compute metrics
-        percent_deleted_tokens, exact_match, f1 = metrics_function(
-            model, input_ids, all_answers)
+        percent_deleted_tokens, exact_match, f1, runtime = metrics_function(
+            model, input_ids, all_answers, include_runtime=args.include_runtime)
 
         # Update the total metrics
         total_exact_match += exact_match
         total_f1 += f1
         total_percent_deleted_tokens += percent_deleted_tokens
+        total_time += runtime
 
-    # End the timer
-    end_time = time.time()
-    eval_runtime = (end_time - start_time) / \
-        len(eval_dataloader.dataset) * 1000
+    eval_runtime = total_time / len(eval_dataloader.dataset) * 1000
 
     average_exact_match = total_exact_match / num_batches * 100
     average_f1 = total_f1 / num_batches * 100
@@ -242,10 +256,10 @@ if __name__ == "__main__":
                         help='Random seed for reproducibility.')
     parser.add_argument('--deletion_threshold', type=float,
                         default=-15.0, help='Deletion gate threshold.')
-
-    # Eval arguments
     parser.add_argument('--hard_delete', action='store_true',
                         help='Use hard deletion instead of soft deletion.')
+    parser.add_argument('--include_runtime', action='store_true',
+                        help='Include runtime in evaluation metrics.')
 
     args = parser.parse_args()
 

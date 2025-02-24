@@ -18,6 +18,7 @@ from utils import (
     byt5_compute_metrics,
     mrt5_compute_metrics,
     bpt5_compute_metrics,
+    canine_compute_metrics,
     MODEL_ARCHITECTURES,
 )
 from functools import partial
@@ -60,6 +61,8 @@ if __name__ == "__main__":
                         help='Random seed for reproducibility.')
     parser.add_argument('--deletion_threshold', type=float,
                         default=-15.0, help='Deletion gate threshold.')
+    parser.add_argument('--include_runtime', action='store_true',
+                        help='Include runtime in evaluation metrics.')
 
     # Eval arguments
     parser.add_argument('--per_device_eval_batch_size', type=int,
@@ -89,9 +92,10 @@ if __name__ == "__main__":
                                    hard_delete=args.hard_delete)
     elif args.model_type == 'BPT5':
         metrics_function = bpt5_compute_metrics
+    elif args.model_type == 'CanineT5':
+        metrics_function = canine_compute_metrics
     else:
-        raise ValueError(
-            "Model type must be 'T5' or 'MrT5'.")
+        raise ValueError(f"Model type {args.model_type} not supported.")
 
     seq_accuracy_data = []
     percent_deleted_tokens_data = []
@@ -110,9 +114,7 @@ if __name__ == "__main__":
             # Initialize the total loss
             total_accuracy = 0.0
             total_percent_deleted_tokens = 0.0
-
-            # Start the timer
-            start_time = time.time()
+            total_runtime = 0.0
 
             print(f"Number of batches: {len(eval_dataloader)}")
             print(f"Number of examples: {len(eval_dataloader.dataset)}")
@@ -123,17 +125,17 @@ if __name__ == "__main__":
                 input_ids, labels, attn_mask = get_batch_inputs(batch)
 
                 # Get metrics from the model
-                _, percent_deleted_tokens, _, seq_accuracy, _ = \
-                                metrics_function(model, input_ids, labels, attention_mask=attn_mask)
+                _, percent_deleted_tokens, _, seq_accuracy, _, runtime = \
+                                metrics_function(model, input_ids, labels,
+                                                 attention_mask=attn_mask,
+                                                 include_runtime=args.include_runtime)
 
                 # Update the total metrics
                 total_accuracy += seq_accuracy * batch_size
                 total_percent_deleted_tokens += percent_deleted_tokens * batch_size
+                total_runtime += runtime
 
-            # End the timer
-            end_time = time.time()
-            eval_runtime = (end_time - start_time) / len(eval_dataloader.dataset) * 1000
-
+            eval_runtime = total_runtime / len(eval_dataloader.dataset) * 1000
             average_seq_accuracy = total_accuracy / len(eval_dataloader.dataset) * 100
             average_percent_deleted_tokens = total_percent_deleted_tokens / len(eval_dataloader.dataset)
 

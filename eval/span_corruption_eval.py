@@ -82,6 +82,9 @@ if __name__ == "__main__":
 
     parser.add_argument('--hard_delete', action='store_true', help='Use hard deletion instead of soft deletion.')
 
+    parser.add_argument('--include_runtime', action='store_true',
+                        help='Include runtime in evaluation metrics.')
+
     args = parser.parse_args()
 
     multilingual = "" if not args.multilingual_model else "_multilingual"
@@ -190,36 +193,34 @@ if __name__ == "__main__":
                 total_loss = 0.0
                 total_percent_deleted_tokens = 0.0
                 total_new_seq_len = 0.0
+                total_runtime = 0.0
+                total_examples = 0
                 num_batches = 0
-
-                # Start the timer
-                start_time = time.time()
 
                 for batch in tqdm(eval_dataloader, total=args.num_batches):
                     # Get input IDs and labels
                     input_ids, labels = get_input_ids_and_labels(batch)
 
                     # Compute metrics
-                    loss, percent_deleted_tokens, new_seq_len, _, _ = \
-                                    metrics_function(model, input_ids, labels)
+                    loss, percent_deleted_tokens, new_seq_len, _, _, runtime = \
+                                    metrics_function(model, input_ids, labels, include_runtime=args.include_runtime)
 
                     # Update the total metrics
                     total_loss += loss
                     total_percent_deleted_tokens += percent_deleted_tokens
                     total_new_seq_len += new_seq_len
+                    total_runtime += runtime
+                    total_examples += len(input_ids)
 
                     # Update the running count of batches
                     num_batches += 1
                     if num_batches >= args.num_batches:
                         break
 
-                # End the timer
-                end_time = time.time()
-                eval_runtime = end_time - start_time
-
                 average_loss = total_loss / num_batches
                 average_percent_deleted_tokens = total_percent_deleted_tokens / num_batches
                 average_new_seq_len = total_new_seq_len / num_batches
+                eval_runtime = total_runtime / total_examples * 1000
 
                 loss_data.append(average_loss)
                 percent_deleted_tokens_data.append(

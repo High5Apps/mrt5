@@ -61,6 +61,8 @@ if __name__ == "__main__":
     parser.add_argument('--hard_delete', action='store_true', help='Use hard deletion instead of soft deletion.')
     parser.add_argument('--per_device_eval_batch_size', type=int,
                         default=64, help='Batch size per device during evaluation.')
+    parser.add_argument('--include_runtime', action='store_true',
+                        help='Include runtime in evaluation metrics.')
 
 
     args = parser.parse_args()
@@ -106,13 +108,11 @@ if __name__ == "__main__":
             # Initialize the total loss
             total_accuracy = 0.0
             total_percent_deleted_tokens = 0.0
+            total_runtime = 0.0
             total_examples = 0
 
             print(f"Number of batches: {len(eval_dataloader)}")
             print(f"Number of examples: {len(eval_dataloader.dataset)}")
-
-            # Start the timer
-            start_time = time.time()
 
             for batch in tqdm(eval_dataloader):
                 batch_size = len(batch["input_ids"])
@@ -121,17 +121,20 @@ if __name__ == "__main__":
                 attn_mask = batch["attention_mask"].to(device)
 
                 # Compute metrics
-                _, percent_deleted_tokens, _, acc, _ = \
-                    metrics_function(model, input_ids, labels, attention_mask=attn_mask)
+                _, percent_deleted_tokens, _, acc, _, runtime = \
+                    metrics_function(model, input_ids, labels, 
+                                     attention_mask=attn_mask,
+                                     include_runtime=args.include_runtime)
 
                 # Update the total metrics
                 total_accuracy += acc * batch_size
                 total_examples += batch_size
                 total_percent_deleted_tokens += percent_deleted_tokens * batch_size
+                total_runtime += runtime
 
             # End the timer
             end_time = time.time()
-            eval_runtime = (end_time - start_time) / len(eval_dataloader.dataset) * 1000
+            eval_runtime = total_runtime / len(eval_dataloader.dataset) * 1000
 
             average_seq_accuracy = total_accuracy / len(eval_dataloader.dataset) * 100
             average_percent_deleted_tokens = total_percent_deleted_tokens / len(eval_dataloader.dataset)

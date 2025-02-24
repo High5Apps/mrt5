@@ -8,6 +8,7 @@ from models.modeling_mrt5 import MrT5ForConditionalGeneration, MrT5Config
 from models.modeling_bpt5 import BPT5ForConditionalGeneration
 from models.modeling_canine import CanineT5ForConditionalGeneration
 from datasets import Dataset, IterableDataset
+import time
 
 # Change this path name to the path of the project
 BASE_PATH = "/nlp/scr3/nlp/llms-in-llms/mrt5"
@@ -234,7 +235,64 @@ def calculate_token_accuracy(labels, outputs):
     return accuracy
 
 
-def byt5_compute_metrics(model, input_ids, labels, attention_mask=None):
+def measure_runtime(model, input_ids, labels, num_passes=5, attention_mask=None, hard_delete=None, deletion_threshold=None):
+
+    model_inputs = {
+        "input_ids": input_ids,
+        "labels": labels,
+        "attention_mask": attention_mask,
+    }
+
+    if hard_delete is not None:
+        model_inputs["hard_delete"] = hard_delete
+        model_inputs["deletion_threshold"] = deletion_threshold
+
+    # Ensure synchronization before timing the forward pass
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+    batch_start = time.perf_counter()
+
+    # Only time the model's forward pass
+    for _ in range(num_passes):
+        model(**model_inputs)
+
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+    batch_end = time.perf_counter()
+
+    # Time taken ONLY for model inference
+    return (batch_end - batch_start) / num_passes
+
+
+def measure_runtime_generate(model, input_ids, num_passes=5, hard_delete=None, deletion_threshold=None):
+
+    model_inputs = {
+        "input_ids": input_ids,
+        "max_length": 1024,
+    }
+
+    if hard_delete is not None:
+        model_inputs["hard_delete"] = hard_delete
+        model_inputs["deletion_threshold"] = deletion_threshold
+
+    # Ensure synchronization before timing the forward pass
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+    batch_start = time.perf_counter()
+
+    # Only time the model's forward pass
+    for _ in range(num_passes):
+        model.generate(**model_inputs)
+
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+    batch_end = time.perf_counter()
+
+    # Time taken ONLY for model inference
+    return (batch_end - batch_start) / num_passes
+
+
+def byt5_compute_metrics(model, input_ids, labels, attention_mask=None, include_runtime=False):
 
     # Set pad tokens to -100 so they are not counted in the loss
     labels[labels == 0] = -100
@@ -252,10 +310,17 @@ def byt5_compute_metrics(model, input_ids, labels, attention_mask=None):
     # Get the new sequence length
     new_seq_length = outputs.encoder_last_hidden_state.shape[1]
 
-    return outputs.loss.item(), 0.0, new_seq_length, seq_accuracy, token_accuracy
+    # Only time the model's forward pass
+    if include_runtime:
+        model_runtime = measure_runtime(model, input_ids=input_ids, labels=labels, attention_mask=attention_mask)
+    else:
+        model_runtime = 0.0
+
+    return outputs.loss.item(), 0.0, new_seq_length, \
+        seq_accuracy, token_accuracy, model_runtime
 
 
-def mrt5_compute_metrics(model, input_ids, labels, deletion_threshold, hard_delete=True, attention_mask=None):
+def mrt5_compute_metrics(model, input_ids, labels, deletion_threshold, hard_delete=True, attention_mask=None, include_runtime=False):
 
     # Set pad tokens to -100 so they are not counted in the loss
     labels[labels == 0] = -100
@@ -285,11 +350,24 @@ def mrt5_compute_metrics(model, input_ids, labels, deletion_threshold, hard_dele
     # Get the new sequence length
     new_seq_length = outputs.encoder_last_hidden_state.shape[1]
 
+    if include_runtime:
+        # Only time the model's forward pass
+        model_runtime = measure_runtime(
+            model,
+            input_ids=input_ids,
+            labels=labels,
+            hard_delete=hard_delete,
+            deletion_threshold=deletion_threshold,
+            attention_mask=attention_mask)
+    else:
+        model_runtime = 0.0
+
     # Return cross entropy loss, accuracy, and percent deleted tokens
-    return outputs.loss.item(), percent_deleted_tokens.item(), new_seq_length, seq_accuracy, token_accuracy
+    return outputs.loss.item(), percent_deleted_tokens.item(), \
+        new_seq_length, seq_accuracy, token_accuracy, model_runtime
 
 
-def bpt5_compute_metrics(model, input_ids, labels, attention_mask=None):
+def bpt5_compute_metrics(model, input_ids, labels, attention_mask=None, include_runtime=False):
 
     # Set pad tokens to -100 so they are not counted in the loss
     labels[labels == 0] = -100
@@ -314,11 +392,18 @@ def bpt5_compute_metrics(model, input_ids, labels, attention_mask=None):
     # Get the new sequence length
     new_seq_length = outputs.encoder_last_hidden_state.shape[1]
 
+    if include_runtime:
+        # Only time the model's forward pass
+        model_runtime = measure_runtime(model, input_ids=input_ids, labels=labels, attention_mask=attention_mask)
+    else:
+        model_runtime = 0.0
+
     # Return cross entropy loss, accuracy, and percent deleted tokens
-    return outputs.loss.item(), percent_deleted_tokens, new_seq_length, seq_accuracy, token_accuracy
+    return outputs.loss.item(), percent_deleted_tokens, \
+        new_seq_length, seq_accuracy, token_accuracy, model_runtime
 
 
-def canine_compute_metrics(model, input_ids, labels, attention_mask=None):
+def canine_compute_metrics(model, input_ids, labels, attention_mask=None, include_runtime=False):
 
     # Set pad tokens to -100 so they are not counted in the loss
     labels[labels == 0] = -100
@@ -342,8 +427,15 @@ def canine_compute_metrics(model, input_ids, labels, attention_mask=None):
     # Get the new sequence length
     new_seq_length = outputs.encoder_last_hidden_state.shape[1]
 
+    # Only time the model's forward pass
+    if include_runtime:
+        model_runtime = measure_runtime(model, input_ids=input_ids, labels=labels, attention_mask=attention_mask)
+    else:
+        model_runtime = 0.0
+
     # Return cross entropy loss, accuracy, and percent deleted tokens
-    return outputs.loss.item(), percent_deleted_tokens, new_seq_length, seq_accuracy, token_accuracy
+    return outputs.loss.item(), percent_deleted_tokens, \
+        new_seq_length, seq_accuracy, token_accuracy, model_runtime
 
 
 ALL_LANGUAGES = {
