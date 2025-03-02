@@ -585,6 +585,7 @@ XQUAD_LANGUAGES = {
 }
 
 TYDIQA_LANGUAGES = {
+    "ru": "Russian",
     "ar": "Arabic",
     "bn": "Bengali",
     "te": "Telugu",
