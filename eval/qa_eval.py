@@ -16,6 +16,7 @@ from utils import (
     TYDIQA_LANGUAGES,
     load_model_from_path,
     measure_runtime_generate,
+    measure_runtime,
     MODEL_ARCHITECTURES,
 )
 from datasets import load_dataset
@@ -89,7 +90,7 @@ def byt5_compute_metrics(model, input_ids, ground_truths, include_runtime=False)
     # Get model outputs
     outputs = model.generate(
         input_ids=input_ids,
-        max_length=1024,
+        max_length=256,
         output_hidden_states=True,
         return_dict_in_generate=True)
 
@@ -100,7 +101,7 @@ def byt5_compute_metrics(model, input_ids, ground_truths, include_runtime=False)
 
     if include_runtime:
         # Only time the model's forward pass
-        model_runtime = measure_runtime_generate(model, input_ids=input_ids)
+        model_runtime = measure_runtime(model, input_ids=input_ids, labels=outputs['sequences'])
     else:
         model_runtime = 0.0
 
@@ -112,7 +113,7 @@ def mrt5_compute_metrics(model, input_ids, ground_truths, deletion_threshold, ha
     # Get model outputs
     outputs = model.generate(
         input_ids=input_ids,
-        max_length=1024,
+        max_length=256,
         output_hidden_states=True,
         return_dict_in_generate=True,
         hard_delete=hard_delete,
@@ -129,9 +130,10 @@ def mrt5_compute_metrics(model, input_ids, ground_truths, deletion_threshold, ha
 
     if include_runtime:
         # Only time the model's forward pass
-        model_runtime = measure_runtime_generate(model, input_ids=input_ids, 
+        model_runtime = measure_runtime(model, input_ids=input_ids, 
                                                  hard_delete=hard_delete, 
-                                                 deletion_threshold=deletion_threshold)
+                                                 deletion_threshold=deletion_threshold,
+                                                 labels=outputs['sequences'])
     else:
         model_runtime = 0.0
 
@@ -144,7 +146,7 @@ def bp_canine_compute_metrics(model, input_ids, ground_truths, include_runtime=F
     # Get model outputs
     outputs = model.generate(
         input_ids=input_ids,
-        max_length=1024,
+        max_length=256,
         output_hidden_states=True,
         return_dict_in_generate=True)
 
@@ -159,7 +161,7 @@ def bp_canine_compute_metrics(model, input_ids, ground_truths, include_runtime=F
 
     if include_runtime:
         # Only time the model's forward pass
-        model_runtime = measure_runtime_generate(model, input_ids=input_ids)
+        model_runtime = measure_runtime(model, input_ids=input_ids, labels=outputs['sequences'])
     else:
         model_runtime = 0.0
 
@@ -167,12 +169,12 @@ def bp_canine_compute_metrics(model, input_ids, ground_truths, include_runtime=F
     return percent_deleted_tokens, exact_match, f1, model_runtime
 
 
-def bpt5_compute_metrics(model, input_ids, ground_truths):
-    return bp_canine_compute_metrics(model, input_ids, ground_truths)
+def bpt5_compute_metrics(model, input_ids, ground_truths, include_runtime=False):
+    return bp_canine_compute_metrics(model, input_ids, ground_truths, include_runtime)
 
 
-def canine_compute_metrics(model, input_ids, ground_truths):
-    return bp_canine_compute_metrics(model, input_ids, ground_truths)
+def canine_compute_metrics(model, input_ids, ground_truths, include_runtime=False):
+    return bp_canine_compute_metrics(model, input_ids, ground_truths, include_runtime)
 
 
 def load_eval_dataset(language, batch_size):
