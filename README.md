@@ -17,14 +17,13 @@ This repository includes the code to replicate every experiment in our paper and
 If you use this repo, please cite the MrT5 paper:
 
 ```bibtex
-@unpublished{kallini2024mrt5dynamictokenmerging,
-    title={MrT5: Dynamic Token Merging for Efficient Byte-level Language Models}, 
-    author={Julie Kallini and Shikhar Murty and Christopher D. Manning and Christopher Potts and Róbert Csordás},
-    year={2024},
-    eprint={2410.20771},
-    archivePrefix={arXiv},
-    primaryClass={cs.CL},
-    url={https://arxiv.org/abs/2410.20771}, 
+@inproceedings{
+    kallini2025mrt,
+    title={MrT5: Dynamic Token Merging for Efficient Byte-level Language Models},
+    author={Julie Kallini and Shikhar Murty and Christopher D Manning and Christopher Potts and R{\'o}bert Csord{\'a}s},
+    booktitle={The Thirteenth International Conference on Learning Representations},
+    year={2025},
+    url={https://openreview.net/forum?id=VYWBMq1L7H}
 }
 ```
 
@@ -72,19 +71,18 @@ will be written.
 ## Dataset Creation
 
 The `\data` directory contains data collators and scripts for generating each dataset in the paper. The generated datasets are used by the training
-and eval scripts described in the next sections. The only dataset that we
-do not pre-tokenize for training and eval is XNLI.
+and eval scripts described in the next sections. We do not pre-tokenize the datasets for the XNLI and QA tasks. 
 
 ### Span Corruption Datasets
 
 The script that generates span corruption data is `preprocess_lm_dataset.py`.
 It uses data from [multilingual C4](https://huggingface.co/datasets/allenai/c4) (mC4).
-The script's default behavior is to generate monolingual train, validation, and test splits for each of the 15 languages in our paper (English, French, Spanish, German, Greek, Bulgarian, Russian, Turkish, Arabic, Vietnamese, Thai, Chinese, Hindi, Swahili, and Urdu).
+The script's default behavior is to generate monolingual train, validation, and test splits for each of the 15 languages in the continued pre-training section of our paper (English, French, Spanish, German, Greek, Bulgarian, Russian, Turkish, Arabic, Vietnamese, Thai, Chinese, Hindi, Swahili, and Urdu).
 
-Run the command below to create just an English span corruption dataset with train, validation, and test splits to replicate the monolingual continued pre-training experiments:
+In the paper, we use a multilingual dataset mixture for the continued pre-training experiments. To generate a multilingual training corpus that contains a random mixture of data in the 15 languages, use the `multilingual` flag:
 
 ```
-python3 preprocess_lm_dataset.py --en_only
+python3 preprocess_lm_dataset.py --multilingual
 ```
 
 To create test sets across the 15 languages from our paper for multilingual evaluation, indicate that you would only like to generate the `test` split:
@@ -93,16 +91,17 @@ To create test sets across the 15 languages from our paper for multilingual eval
 python3 preprocess_lm_dataset.py --split test
 ```
 
-To generate a multilingual training corpus that contains a random mixture
-of data in the 15 languages, use the `multilingual` flag:
+To create just an English span corruption dataset with train, validation, and test splits, run the following command:
 
 ```
-python3 preprocess_lm_dataset.py --multilingual
+python3 preprocess_lm_dataset.py --en_only
 ```
 
 To support more languages, update the `SUBSET_LANGUAGES` dictionary in
 `utils.py` with any languages that are part of mC4. The full list is provided
 in the `ALL_LANGUAGES` dictionary in `utils.py`.
+
+One additional detail is that there is not enough validation data in mC4 to have equal-sized validation and test splits for all languages, so we only use English data for validation and save the other languages' data for testing (described in Appendix E.2 of the paper).
 
 ### Diagnostic Datasets
 
@@ -120,7 +119,7 @@ Here is an example usage of the script to generate the train, dev, and test spli
 simple vowel removal task:
 
 ```
-python3 preprocess_diagnostic_dataset.py vowel_removal --train_n 2560000 --eval_n 32000
+python3 preprocess_diagnostic_dataset.py vowel_removal --train_n 6400000 --eval_n 32000
 ```
 
 ### Downstream Task Datasets
@@ -132,9 +131,7 @@ First, download the data from the [char-iit](https://github.com/explanare/char-i
 in a directory at `BASE_PATH + 'finetune_datasets/char_iit_data/'`. The
 script assumes that the data is located at this path.
 
-Right now, we support the contextual spellign correction and word search
-tasks from the char-iit repo. Below is an example command to preprocess 
-the data for the contextual spelling correction task:
+Right now, we support the contextual *Spelling Correction with Context* and *Word Search* tasks from the char-iit repo. Below is an example command to preprocess the data for the contextual spelling correction task:
 
 ```
 python3 preprocess_char_dataset.py spelling_correction_contextual
@@ -142,10 +139,13 @@ python3 preprocess_char_dataset.py spelling_correction_contextual
 
 ## Training
 
-Our codebase supports training ByT5 or MrT5 architectures, as well as the
-random and fixed deletion baselines described in the paper. All model training
-code is located in the `\training` directory, and model architectures are
-located in the `\models` directory.
+All model training code is located in the `\training` directory, and model architectures are located in the `\models` directory. Our codebase supports training all model architectures described in the paper:
+1. MrT5 ([modeling_mrt5.py](./models/modeling_mrt5.py))
+2. ByT5 ([modeling_byt5.py](./models/modeling_byt5.py))
+3. Random baseline ([modeling_mrt5.py](./models/modeling_mrt5.py))
+4. Fixed baseline ([modeling_mrt5.py](./models/modeling_mrt5.py))
+5. Boundary Predictor (BP) baseline ([modeling_bpt5.py](./models/modeling_bpt5.py))
+6. Convolutional Pooling (CP) baseline ([modeling_canine.py](./models/modeling_canine.py))
 
 To view the full list of training arguments:
 
@@ -154,10 +154,10 @@ To view the full list of training arguments:
 ```
 
 
-Here is an example usage of our `train.py` script to fine-tune a pre-trained ByT5 Small on the span corruption task (with $\mathrm{softmax}_1$).
+Here is an example usage of our `train.py` script to fine-tune a pre-trained ByT5 Small on the multilingual span corruption task (with $\mathrm{softmax}_1$).
 
 ```
-python3 train.py span_corruption \
+python3 train.py span_corruption_multilingual \
   --warmup_steps 0 \
   --logging_steps 10 \
   --eval_steps 50 \
@@ -165,7 +165,7 @@ python3 train.py span_corruption \
   --per_device_train_batch_size 8 \
   --run_name t5_span_corruption \
   --random_seed 28 \
-  --max_steps 3000 \
+  --max_steps 5000 \
   --use_softmax1
 ```
 
@@ -174,7 +174,7 @@ train MrT5's delete gate on top of a pre-trained ByT5 Small, as described in
 Section 5 of the paper (the continued pre-training experiments).
 
 ```
-python3 train.py span_corruption \
+python3 train.py span_corruption_multilingual \
   --warmup_steps 0 \
   --logging_steps 10 \
   --eval_steps 50 \
@@ -182,7 +182,7 @@ python3 train.py span_corruption \
   --per_device_train_batch_size 8 \
   --run_name mrt5_span_corruption \
   --random_seed 28 \
-  --max_steps 3000 \
+  --max_steps 5000 \
   --use_softmax1 \
   --model_type MrT5
 ```
@@ -191,42 +191,45 @@ python3 train.py span_corruption \
 
 > [!IMPORTANT]  
 > When training your own MrT5 models, we **highly recommend** using a
-P-controller to target a specific deletion rate. For example, you can set
+PI-controller to target a specific deletion rate (described in Section 3.2 of the paper).
+For example, you can set
 a hyperparameter that will steer MrT5 to delete about 40% of tokens.
 This will help avoid parameter sweeps across $\alpha$ values and generally
 allow for more stable training.
 
 Our training script supports several MrT5-specific training arguments:
 - `delete_gate_loss_coeff` is the $\alpha$ hyperparameter of the delete gate regularizer (defaults to 0.0).
-  When using a P-controller, which dynamically sets $\alpha$, this argument sets the starting $\alpha_0$.
+  When using a PI-controller, which dynamically sets $\alpha$, this argument sets the starting $\alpha_0$.
 - `sigmoid_mask_scale` is the scale $k$ of the sigmoid activation in MrT5's delete gate (defaults to -30.0).
-- `regularizer_delay` is the number of steps before applying delete gate regularizer (defaults to 0).
-- `delete_gate_layer` is the layer after which the delete gate is placed (defaults to 2, or the 3rd layer).
-- `target_deletion_rate` is the desired sequence length reduction $\hat{\delta}$ when using a P-controller
-  (defaults to None, i.e. no P-controller is used).
-- `p_controller_value` is the proportional gain $k_p$ when using a P-controller (defaults to None, i.e. no P-controller is used).
+- `regularizer_delay` is the number of steps before applying delete gate regularizer (defaults to 0). For the diagnostic tasks, we set this to 10k steps.
+- `delete_gate_layer` is the layer after which the delete gate is placed (defaults to 3, or the 3rd layer).
+- `target_deletion_rate` is the desired sequence length reduction $\delta$ when using a PI-controller
+  (defaults to None, i.e. no PI-controller is used).
+- `controller_p` is the proportional gain $k_p$ when using a PI-controller (defaults to 0.5). This parameter is only used if `target_deletion_rate` is not None.
+- `controller_i` is the integral gain $k_i$ when using a PI-controller (defaults to 1e-5). This parameter is only used if `target_deletion_rate` is not None.
 
 
 Below is an example of a continued pre-training run for a MrT5 model on the span corruption task with a target
-deletion rate of 40\%. You can set the P-controller training arguments as follows:
+deletion rate of 40\%. You can set the PI-controller training arguments as follows:
 
 ```
-python3 train.py span_corruption \
+python3 train.py span_corruption_multilingual \
   --warmup_steps 0 \
   --logging_steps 10 \
   --eval_steps 50 \
   --effective_batch_size 1024 \
   --per_device_train_batch_size 8 \
-  --run_name mrt5_span_corruption_pctrl40% \
+  --run_name mrt5_span_corruption_40% \
   --random_seed 28 \
-  --max_steps 3000 \
+  --max_steps 5000 \
   --use_softmax1 \
   --model_type MrT5 \
   --target_deletion_rate 0.4 \
-  --p_controller_value 0.000001
+  --controller_p 0.5 \
+  --controller_i 0.00005
 ```
 
-This is equivalent to $\hat{\delta} = 0.4$ and $k_p = 10^{-6}$, as described in Section 3.2 of the paper.
+This is equivalent to $\delta = 0.4$, $k_p = 0.5$, and $k_i = 1\text{e-}5$ as described in Section 3.2 of the paper.
 
 ### Training from Scratch
 
@@ -234,24 +237,23 @@ By default, our script runs *fine-tuning* on top of a pre-trained ByT5
 model (which corresponds to *continued pre-training* when training on the
 span corruption task, as described above). However, we also support training a model from scratch with custom architecture configurations. This is how we trained models from scratch for the diagnostic task experiments.
 
-Below is an example command to train a tiny T5 model with 9 encoder layers, 3 decoder layers, $d_{\text{ff}} = 1024$, and $d_{\text{model}} = 512$ from scratch on the vowel removal diagnostic task:
+Below is an example command to train a tiny T5 model with 3 encoder layers, 3 decoder layers, $d_{\text{ff}} = 1024$, and $d_{\text{model}} = 512$ from scratch on the vowel removal diagnostic task:
 
 ```
 python3 train.py vowel_removal \
   --random_seed 59 \
   --run_name t5_vowel_removal \
   --train_from_scratch \
-  --max_steps 20000 \
+  --max_steps 30000 \
   --effective_batch_size 128 \
   --per_device_train_batch_size 32 \
   --per_device_eval_batch_size 32 \
   --use_softmax1 \
   --d_ff 1024 \
   --d_model 512 \
-  --num_encoder_layers 9 \
-  --num_decoder_layers 3
+  --num_encoder_layers 3 \
+  --num_decoder_layers 3 \
+  --num_heads 4
 ```
 
-## Evaluation
-
-Instructions are coming soon!
+When training MrT5 from scratch, we encourage enabling an additional *attention score regularizer* to prevent attention scores from inflating, as described in Appendix D. This can be set using the `scores_loss_coeff` parameter, referred to as $\beta$ in the paper. A value of $\beta=0.5$ worked well in practice.
