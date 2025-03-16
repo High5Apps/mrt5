@@ -181,7 +181,7 @@ if __name__ == "__main__":
                         help='Coefficient for the key/query norm loss.')
     parser.add_argument('--use_softmax1',
                         action='store_true', help='Specify layer to add delete gate after.')
-    parser.add_argument('--delete_gate_layer', type=int, default=2, help='Layer to add delete gate after.')
+    parser.add_argument('--delete_gate_layer', type=int, default=3, help='Layer to add delete gate after.')
 
     # Entropy regularization loss
     parser.add_argument('--entropy_reg_coeff_1', type=float, default=0.0,
@@ -204,7 +204,7 @@ if __name__ == "__main__":
                         help='Amount of deletion for fixed deletion baseline (FixedT5 model only).')
     
     # BPT5 specific arguments
-    parser.add_argument('--boundary_predictor_layer', type=int, default=2,
+    parser.add_argument('--boundary_predictor_layer', type=int, default=3,
                         help='Layer to add boundary predictor after.')
     parser.add_argument('--boundary_predictor_type', type=str, default='gumbel',
                         help='Type of boundary predictor to use.')
@@ -213,7 +213,7 @@ if __name__ == "__main__":
     parser.add_argument('--prior', type=float, default=0.2)
 
     # CanineT5 specific arguments
-    parser.add_argument('--downsampling_layer', type=int, default=2,
+    parser.add_argument('--downsampling_layer', type=int, default=3,
                         help='Layer to add downsampling after.')
     parser.add_argument('--downsampling_rate', type=int, default=4,
                         help='Downsampling rate for CanineT5 model.')
