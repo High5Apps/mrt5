@@ -9,9 +9,10 @@ from models.modeling_bpt5 import BPT5ForConditionalGeneration
 from models.modeling_canine import CanineT5ForConditionalGeneration
 from datasets import Dataset, IterableDataset
 import time
+from os.path import expanduser
 
 # Change this path name to the path of the project
-BASE_PATH = "/nlp/scr3/nlp/llms-in-llms/mrt5"
+BASE_PATH = str(expanduser("~/git/mrt5"))
 CHECKPOINT_PATH = f"{BASE_PATH}/models"
 LM_DATASET_PATH = f"{BASE_PATH}/lm_datasets"
 DIAGNOSTIC_DATASET_PATH = f"{BASE_PATH}/diagnostic_datasets"
