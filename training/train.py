@@ -127,6 +127,8 @@ if __name__ == "__main__":
     parser.add_argument('--run_name', type=str, default=None,)
     parser.add_argument('--disable_wandb', action='store_true',
                         help='Disable Weights & Biases logging.')
+    parser.add_argument('--disable_compile', action='store_true',
+                    help='Disable compiling torch.')
     parser.add_argument('--use_cache', action='store_true',
                         help='Use cache for training.')
     parser.add_argument('--train_from_scratch',
@@ -406,7 +408,7 @@ if __name__ == "__main__":
         seed=args.random_seed,
         overwrite_output_dir=True,
         load_best_model_at_end=True,
-        torch_compile=True,
+        torch_compile=(not args.disable_compile),
         report_to=[] if args.disable_wandb else "wandb",
         run_name=run_name,
         remove_unused_columns=False,
