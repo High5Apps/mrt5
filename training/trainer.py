@@ -140,7 +140,7 @@ class T5Trainer(Trainer):
 
         return (loss, outputs) if return_outputs else loss
 
-    def log(self, logs):
+    def log(self, logs, start_time=None):
         # Format the metrics to log
         formatted_metrics = {k: round(statistics.fmean(v), 4)
                              for k, v in self.metrics.items() if "histogram" not in k and len(v) > 0}
