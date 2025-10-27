@@ -8,14 +8,14 @@ import statistics
 import torch
 import nltk
 import numpy as np
-from transformers import TrainingArguments, Trainer
+from transformers import Seq2SeqTrainingArguments, Seq2SeqTrainer
 from dataclasses import dataclass, field
 from typing import Optional
 from utils import calculate_seq_accuracy, calculate_token_accuracy
 
 
 @dataclass
-class MrT5TrainingArguments(TrainingArguments):
+class MrT5TrainingArguments(Seq2SeqTrainingArguments):
     delete_gate_loss_coeff: float = field(
         default=0.0, metadata={"help": "Coefficient for the delete gate loss."}
     )
@@ -51,7 +51,7 @@ class MrT5TrainingArguments(TrainingArguments):
     )
 
 
-class T5Trainer(Trainer):
+class T5Trainer(Seq2SeqTrainer):
     def __init__(
         self,
         model=None,
