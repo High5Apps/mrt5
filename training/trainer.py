@@ -363,6 +363,7 @@ class MrT5Trainer(T5Trainer):
         return loss, cross_entropy_loss, delete_gate_output
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+        self.model_accepts_loss_kwargs = False
         input_ids = inputs.pop("input_ids")
         attention_mask = inputs.pop(
             "attention_mask") if "attention_mask" in inputs else None
