@@ -228,42 +228,34 @@ class MrT5Attention(T5Attention):
             query_states, key_states.transpose(3, 2)
         )  # equivalent of torch.einsum("bnqd,bnkd->bnqk", query_states, key_states), compatible with onnx op>9
 
-        #### NEW CODE ####
-        if not self.has_absolute_position_embeddings:
-        #### NEW CODE ####
-            if position_bias is None:
-                if not self.has_relative_attention_bias:
-                    position_bias = torch.zeros(
-                        (1, self.n_heads, real_seq_length, key_length), device=scores.device, dtype=scores.dtype
-                    )
-                    if self.gradient_checkpointing and self.training:
-                        position_bias.requires_grad = True
-                else:
-                    position_bias = self.compute_bias(
-                        real_seq_length, key_length, device=scores.device)
-
-                # if key and values are already calculated
-                # we want only the last query position bias
-                if past_key_value is not None:
-                    position_bias = position_bias[:, :, -hidden_states.size(1):, :]
-
-                if mask is not None:
-                    # (batch_size, n_heads, seq_length, key_length)
-                    position_bias = position_bias + mask
-
-            if self.pruned_heads:
-                mask = torch.ones(position_bias.shape[1])
-                mask[list(self.pruned_heads)] = 0
-                position_bias_masked = position_bias[:, mask.bool()]
+        if position_bias is None:
+            if not self.has_relative_attention_bias:
+                position_bias = torch.zeros(
+                    (1, self.n_heads, real_seq_length, key_length), device=scores.device, dtype=scores.dtype
+                )
+                if self.gradient_checkpointing and self.training:
+                    position_bias.requires_grad = True
             else:
-                position_bias_masked = position_bias
+                position_bias = self.compute_bias(
+                    real_seq_length, key_length, device=scores.device)
 
-            scores = scores + position_bias_masked
+            # if key and values are already calculated
+            # we want only the last query position bias
+            if past_key_value is not None:
+                position_bias = position_bias[:, :, -hidden_states.size(1):, :]
 
-        #### NEW CODE ####
-        # If there is no position bias, add attention mask to scores directly
-        elif mask is not None:
-            scores = scores + mask
+            if mask is not None:
+                # (batch_size, n_heads, seq_length, key_length)
+                position_bias = position_bias + mask
+
+        if self.pruned_heads:
+            mask = torch.ones(position_bias.shape[1])
+            mask[list(self.pruned_heads)] = 0
+            position_bias_masked = position_bias[:, mask.bool()]
+        else:
+            position_bias_masked = position_bias
+
+        scores = scores + position_bias_masked
 
         #### NEW CODE ####
         # Log scores to return for loss calculation
@@ -749,13 +741,6 @@ class MrT5Stack(T5Stack):
                 raise ValueError(
                     "You have to initialize the model with valid token embeddings")
             inputs_embeds = self.embed_tokens(input_ids)
-
-        #### NEW CODE ####
-        if self.absolute_pos_embed is not None:
-            position_ids = torch.arange(input_shape[-1], dtype=torch.long, device=inputs_embeds.device)
-            position_embeds = self.absolute_pos_embed(position_ids)
-            inputs_embeds = inputs_embeds + position_embeds
-        #### NEW CODE ####
 
         batch_size, seq_length = input_shape
 
