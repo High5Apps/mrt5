@@ -260,14 +260,12 @@ class MrT5Attention(T5Attention):
         #### NEW CODE ####
         # Log scores to return for loss calculation
         scores_to_return = scores
-        #### NEW CODE ####
 
         # Apply the mask from the delete gate
         if delete_gate_mask is not None:
             scores = scores + delete_gate_mask.squeeze(-1).unsqueeze(-2).unsqueeze(-2)
 
         attn_weights = softmax1(scores.float(), dim=-1).type_as(scores)
-
         #### NEW CODE ####
 
         attn_weights = nn.functional.dropout(
