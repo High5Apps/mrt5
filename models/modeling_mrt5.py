@@ -14,7 +14,6 @@ from models.modeling_t5 import (
     T5LayerFF,
     T5Stack,
     T5ForConditionalGeneration,
-    softmax1,
 )
 from .configuration_mrt5 import MrT5Config
 from transformers.modeling_outputs import (
@@ -79,6 +78,14 @@ TORCH_INIT_FUNCTIONS = {
     "kaiming_uniform": nn.init.kaiming_uniform,
     "kaiming_normal": nn.init.kaiming_normal,
 }
+
+def softmax1(logits: torch.Tensor, dim: int = -1) -> torch.Tensor:
+    if logits.shape[dim] == 0:
+        return logits
+    m = logits.detach().max(dim, keepdim=True)[0]
+    logits = logits - m
+    logits = logits.exp()
+    return logits / (logits.sum(dim, keepdim=True) + (-m).exp())
 
 class ScaledSigmoid(nn.Module):
     def __init__(self, sigmoid_mask_scale):
@@ -228,9 +235,6 @@ class MrT5Attention(T5Attention):
 
     def __init__(self, config: MrT5Config, has_relative_attention_bias=False):
         super().__init__(config, has_relative_attention_bias)
-        #### NEW CODE ####
-        self.use_softmax1 = config.use_softmax1 
-        #### NEW CODE ####
 
     def forward(
         self,
@@ -368,13 +372,7 @@ class MrT5Attention(T5Attention):
         if delete_gate_mask is not None:
             scores = scores + delete_gate_mask.squeeze(-1).unsqueeze(-2).unsqueeze(-2)
 
-        if self.use_softmax1:
-            attn_weights = softmax1(scores.float(), dim=-1).type_as(
-                scores)
-        else:
-            attn_weights = nn.functional.softmax(scores.float(), dim=-1).type_as(
-                scores
-            )  # (batch_size, n_heads, seq_length, key_length)
+        attn_weights = softmax1(scores.float(), dim=-1).type_as(scores)
 
         #### NEW CODE ####
 
