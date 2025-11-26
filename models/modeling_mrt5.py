@@ -403,11 +403,7 @@ class MrT5Block(nn.Module):
     T5LayerCrossAttention.
     """
 
-    def __init__(self, config, has_relative_attention_bias=False, layer_idx: Optional[int] = None,
-                 #### NEW CODE ####
-                 has_delete_gate=False,
-                 #### NEW CODE ####
-                 ):
+    def __init__(self, config, has_relative_attention_bias=False, layer_idx: Optional[int] = None):
         super().__init__()
         self.is_decoder = config.is_decoder
         self.layer = nn.ModuleList()
@@ -424,7 +420,7 @@ class MrT5Block(nn.Module):
 
         #### NEW CODE ####
         # Add delete gate if needed
-        self.has_delete_gate = has_delete_gate
+        self.has_delete_gate = not config.is_decoder and (layer_idx == config.delete_gate_layer)
         if self.has_delete_gate:
             if config.deletion_type == "scaled_sigmoid":
                 self.delete_gate = SigmoidDeleteGate(config)
@@ -665,28 +661,9 @@ class MrT5Stack(T5Stack):
         super().__init__(config, embed_tokens)
 
         ##### NEW CODE #####
-        if self.is_decoder:
-            self.block = nn.ModuleList(
-                [
-                    MrT5Block(
-                        config, has_relative_attention_bias=bool(i == 0), layer_idx=i)
-                    for i in range(config.num_layers)
-                ]
-            )
-        else:
-            blocks = []
-            for i in range(config.num_layers):
-                blocks.append(
-                    MrT5Block(
-                        config,
-                        # Only the first layer has relative attention bias
-                        has_relative_attention_bias=bool(i == 0),
-                        # Add delete gate if specified
-                        has_delete_gate=bool(i == config.delete_gate_layer),
-                        layer_idx=i,
-                    )
-                )
-            self.block = nn.ModuleList(blocks)
+        self.block = nn.ModuleList(
+            [MrT5Block(config, has_relative_attention_bias=bool(i == 0), layer_idx=i) for i in range(config.num_layers)]
+        )
         ##### NEW CODE #####
 
     def forward(
