@@ -95,11 +95,6 @@ class ScaledSigmoid(nn.Module):
     def forward(self, input):
         return self.sigmoid_mask_scale * torch.sigmoid(-input)
 
-def gumbel_noise_like(x: torch.Tensor) -> torch.Tensor:
-    eps = 3e-4 if x.dtype == torch.float16 else 1e-10
-    uniform = torch.empty_like(x).uniform_(eps, 1 - eps)
-    return - (- uniform.log()).log()
-
 class SigmoidDeleteGate(nn.Module):
     def __init__(self, config):
         super().__init__()
@@ -115,11 +110,6 @@ class SigmoidDeleteGate(nn.Module):
         if self.has_layer_norm:
             hidden_states = self.layer_norm(hidden_states)
         delete_gate_logits = self.feed_forward(hidden_states)
-
-        # Add gumbel noise to the delete gate logits
-        if self.training and self.use_gumbel_noise:
-            gumbel_noise = gumbel_noise_like(delete_gate_logits)
-            delete_gate_logits += gumbel_noise
 
         gate_values = self.activation(delete_gate_logits)
 
