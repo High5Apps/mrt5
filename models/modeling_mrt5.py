@@ -135,8 +135,8 @@ class MrT5Attention(T5Attention):
     is applied to the attention scores.
     """
 
-    def __init__(self, config: MrT5Config, has_relative_attention_bias=False):
-        super().__init__(config, has_relative_attention_bias)
+    def __init__(self, config: MrT5Config, has_relative_attention_bias=False, layer_idx: Optional[int] = None):
+        super().__init__(config, has_relative_attention_bias, layer_idx)
 
     def forward(
         self,
@@ -300,12 +300,12 @@ class MrT5LayerSelfAttention(nn.Module):
     of T5Attention.
     """
 
-    def __init__(self, config, has_relative_attention_bias=False):
+    def __init__(self, config, has_relative_attention_bias=False, layer_idx: Optional[int] = None):
         super().__init__()
         #### NEW CODE ####
         # Use MrT5Attention instead of T5Attention
         self.SelfAttention = MrT5Attention(
-            config, has_relative_attention_bias=has_relative_attention_bias)
+            config, has_relative_attention_bias=has_relative_attention_bias, layer_idx=layer_idx)
         #### NEW CODE ####
         self.layer_norm = T5LayerNorm(
             config.d_model, eps=config.layer_norm_epsilon)
@@ -349,12 +349,12 @@ class MrT5LayerCrossAttention(nn.Module):
     of T5Attention.
     """
 
-    def __init__(self, config):
+    def __init__(self, config, layer_idx: Optional[int] = None):
         super().__init__()
         #### NEW CODE ####
         # Use MrT5Attention instead of T5Attention
         self.EncDecAttention = MrT5Attention(
-            config, has_relative_attention_bias=False)
+            config, has_relative_attention_bias=False, layer_idx=layer_idx)
         #### NEW CODE ####
         self.layer_norm = T5LayerNorm(
             config.d_model, eps=config.layer_norm_epsilon)
@@ -403,7 +403,7 @@ class MrT5Block(nn.Module):
     T5LayerCrossAttention.
     """
 
-    def __init__(self, config, has_relative_attention_bias=False,
+    def __init__(self, config, has_relative_attention_bias=False, layer_idx: Optional[int] = None,
                  #### NEW CODE ####
                  has_delete_gate=False,
                  #### NEW CODE ####
@@ -415,9 +415,9 @@ class MrT5Block(nn.Module):
         # Use MrT5LayerSelfAttention and MrT5LayerCrossAttention
         # instead of T5LayerSelfAttention and T5LayerCrossAttention
         self.layer.append(MrT5LayerSelfAttention(
-            config, has_relative_attention_bias=has_relative_attention_bias))
+            config, has_relative_attention_bias=has_relative_attention_bias, layer_idx=layer_idx))
         if self.is_decoder:
-            self.layer.append(MrT5LayerCrossAttention(config))
+            self.layer.append(MrT5LayerCrossAttention(config, layer_idx=layer_idx))
         #### NEW CODE ####
 
         self.layer.append(T5LayerFF(config))
@@ -669,7 +669,7 @@ class MrT5Stack(T5Stack):
             self.block = nn.ModuleList(
                 [
                     MrT5Block(
-                        config, has_relative_attention_bias=bool(i == 0))
+                        config, has_relative_attention_bias=bool(i == 0), layer_idx=i)
                     for i in range(config.num_layers)
                 ]
             )
@@ -683,6 +683,7 @@ class MrT5Stack(T5Stack):
                         has_relative_attention_bias=bool(i == 0),
                         # Add delete gate if specified
                         has_delete_gate=bool(i == config.delete_gate_layer),
+                        layer_idx=i,
                     )
                 )
             self.block = nn.ModuleList(blocks)
