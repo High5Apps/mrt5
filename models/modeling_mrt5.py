@@ -138,94 +138,6 @@ class SigmoidDeleteGate(nn.Module):
             TORCH_INIT_FUNCTIONS[init_func](m.weight)
             m.bias.data.fill_(1)
 
-
-class LogSigmoidDeleteGate(SigmoidDeleteGate):
-    def __init__(self, config):
-        super().__init__(config)
-        self.activation = nn.LogSigmoid()
-
-class RandomDeleteGate(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        # Store the sigmoid_mask_scale and the probability of activation
-        self.sigmoid_mask_scale = config.sigmoid_mask_scale
-        self.random_deletion_probability = config.random_deletion_probability
-
-    def __random_mask_tensor(self, x, n):
-        # Determine the shape for the output tensor
-        target_shape = (x.shape[0], x.shape[1], 1)
-        total_elements = x.shape[0] * x.shape[1]
-        
-        # Create a flattened float tensor of all 0.0
-        flat_tensor = torch.zeros(total_elements, dtype=torch.float32, device=x.device)
-        
-        # Randomly select n indices to be set to 1.0
-        indices = torch.randperm(total_elements)[:n]
-        flat_tensor[indices] = 1.0
-        
-        # Reshape it to match the desired target shape
-        float_tensor = flat_tensor.view(target_shape)
-        
-        return float_tensor
-
-    def forward(self, hidden_states, input_ids):
-        # Calculate the number of tokens to delete using a gaussian
-        deletion_percentage = np.random.normal(loc=self.random_deletion_probability, scale=0.05)
-        n_deletions = int(deletion_percentage * hidden_states.shape[0] * hidden_states.shape[1])
-        
-        # Create a random mask with n_deletions True values
-        random_mask = self.__random_mask_tensor(hidden_states, n_deletions)
-        
-        # Scale the mask by sigmoid_mask_scale
-        delete_gate_mask = random_mask * self.sigmoid_mask_scale
-        return delete_gate_mask, delete_gate_mask
-
-    
-class FixedDeleteGate(nn.Module):
-    def __init__(self, config):
-        super().__init__()
-        self.sigmoid_mask_scale = config.sigmoid_mask_scale
-        self.fixed_deletion_amount = config.fixed_deletion_amount
-        self.sep_tokens = torch.tensor([12, 13, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
-                                        46, 47, 48, 49, 50, 61, 62, 63, 64, 65, 66, 67, 94,
-                                        95, 96, 97, 98, 99, 126, 127, 128, 129, 1])
-
-    def __create_mask(self, input_ids):
-        device = input_ids.device
-        batch_size, seq_len = input_ids.size()
-        self.sep_tokens = self.sep_tokens.to(device)
-        
-        # Create an initial mask filled with sigmoid_mask_scale
-        mask = torch.full((batch_size, seq_len), self.sigmoid_mask_scale, device=device)
-        
-        # Find sep_token indices
-        is_sep = torch.isin(input_ids, self.sep_tokens)
-
-        # Create a tensor of segment lengths
-        sep_positions = torch.cumsum(is_sep, dim=1)
-        segment_lengths = torch.zeros_like(input_ids, dtype=torch.float)
-        segment_lengths[:, 1:] = (sep_positions[:, 1:] != sep_positions[:, :-1]).float()
-        segment_lengths[:, 0] = 1.0
-        segment_lengths = torch.cumsum(segment_lengths, dim=1)
-        
-        # Calculate number of zeros for each segment
-        segment_counts = torch.bincount(sep_positions.view(-1), minlength=seq_len)
-        segment_starts = torch.cumsum(torch.cat([torch.tensor([0], device=device), segment_counts[:-1]]), dim=0)
-        segment_ends = torch.cumsum(segment_counts, dim=0)
-        num_zeros = torch.ceil((1 - self.fixed_deletion_amount) * (segment_ends - segment_starts)).long()
-        
-        # Create the mask based on the calculated number of zeros
-        for i in range(batch_size):
-            for start, count in zip(segment_starts, num_zeros):
-                mask[i, start:start + count] = 0
-        
-        return mask.to(torch.float)
-
-    def forward(self, hidden_states, input_ids):
-        delete_gate_mask = self.__create_mask(input_ids).unsqueeze(-1)
-        return delete_gate_mask, delete_gate_mask
-
-
 class MrT5Attention(T5Attention):
     """
     Extends the T5Attention class to include a delete gate. Only the forward
@@ -534,12 +446,6 @@ class MrT5Block(nn.Module):
         if self.has_delete_gate:
             if config.deletion_type == "scaled_sigmoid":
                 self.delete_gate = SigmoidDeleteGate(config)
-            elif config.deletion_type == "log_sigmoid":
-                self.delete_gate = LogSigmoidDeleteGate(config)
-            elif config.deletion_type == "random":
-                self.delete_gate = RandomDeleteGate(config)
-            elif config.deletion_type == "fixed":
-                self.delete_gate = FixedDeleteGate(config)
             else:
                 raise ValueError(
                     f"Invalid deletion type: {config.deletion_type}")
