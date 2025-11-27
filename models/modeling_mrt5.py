@@ -6,9 +6,8 @@
 
 import torch
 import copy
-import numpy as np
 from torch import nn
-from models.modeling_t5 import (
+from transformers.models.t5.modeling_t5 import (
     T5Attention,
     T5LayerNorm,
     T5LayerFF,
