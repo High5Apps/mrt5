@@ -237,6 +237,7 @@ class MrT5Attention(T5Attention):
 
         #### NEW CODE ####
         # Log scores to return for loss calculation
+        # Tigler note: forgot to include code that adds scores_to_return to outputs
         scores_to_return = scores
 
         # Apply the mask from the delete gate
