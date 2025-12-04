@@ -459,6 +459,9 @@ class MrT5Block(GradientCheckpointingLayer):
         encoder_hidden_states=None,
         encoder_attention_mask=None,
         encoder_decoder_position_bias=None,
+        #### NEW CODE ####
+        delete_gate_mask=None,
+        #### NEW CODE ####
         layer_head_mask=None,
         cross_attn_layer_head_mask=None,
         past_key_values=None,
@@ -467,7 +470,6 @@ class MrT5Block(GradientCheckpointingLayer):
         return_dict=True,
         cache_position=None,
         #### NEW CODE ####
-        delete_gate_mask=None,
         input_ids=None,
         hard_delete=None,
         deletion_threshold=None,
@@ -787,6 +789,9 @@ class MrT5Stack(T5Stack):
                 encoder_hidden_states,
                 encoder_extended_attention_mask,
                 encoder_decoder_position_bias,  # as a positional argument for gradient checkpointing
+                #### NEW CODE ####
+                delete_gate_mask,
+                #### NEW CODE ####
                 layer_head_mask=layer_head_mask,
                 cross_attn_layer_head_mask=cross_attn_layer_head_mask,
                 past_key_values=past_key_values,
@@ -795,7 +800,6 @@ class MrT5Stack(T5Stack):
                 return_dict=return_dict,
                 cache_position=cache_position,
                 #### NEW CODE ####
-                delete_gate_mask=delete_gate_mask,
                 input_ids=input_ids,
                 hard_delete=hard_delete,
                 deletion_threshold=deletion_threshold,
