@@ -592,7 +592,6 @@ class MrT5Block(GradientCheckpointingLayer):
             outputs = outputs + \
                 (delete_gate_values, delete_gate_logits, delete_gate_mask, attention_mask)
         
-        # Tigler note: it seems like these don't match up with the comment directly above
         # hidden-states, present_key_value_states, (self-attention position bias), (self-attention weights), (cross-attention position bias), (cross-attention weights), (delete_gate_mask), (delete_gate_logits)
         return outputs
         ##### NEW CODE #####
@@ -742,17 +741,6 @@ class MrT5Stack(T5Stack):
         position_bias = None
         encoder_decoder_position_bias = None
 
-        #### NEW CODE ####
-        all_queries = () if output_attentions else None
-        all_keys = () if output_attentions else None
-        all_values = () if output_attentions else None
-        all_scores = () if output_attentions else None
-        all_cross_attn_queries = () if (output_attentions and self.is_decoder) else None
-        all_cross_attn_keys = () if (output_attentions and self.is_decoder) else None
-        all_cross_attn_values = () if (output_attentions and self.is_decoder) else None
-        all_cross_attn_scores = () if (output_attentions and self.is_decoder) else None
-        #### NEW CODE ####
-
         hidden_states = self.dropout(inputs_embeds)
 
         for i, layer_module in enumerate(self.block):
@@ -824,11 +812,9 @@ class MrT5Stack(T5Stack):
             position_bias = layer_outputs[1]
             if self.is_decoder and encoder_hidden_states is not None:
                 #### NEW CODE ####
-                # Tigler note: This is 1 less than what it was before (4 and 3)
                 encoder_decoder_position_bias = layer_outputs[3 if output_attentions else 2]
                 #### NEW CODE ####
 
-            # Tigler note: I didn't add the new code here or in the self.is_decoder block below
             if output_attentions:
                 all_attentions = all_attentions + (layer_outputs[2],)
                 if self.is_decoder:
@@ -861,7 +847,6 @@ class MrT5Stack(T5Stack):
                     delete_gate_output,
                     delete_gate_logits,
                     attention_mask_to_return,
-                    # Tigler note: I didn't include some of these based on the note above
                     #### NEW CODE ####
                 ]
                 if v is not None
@@ -877,7 +862,6 @@ class MrT5Stack(T5Stack):
             delete_gate_output=delete_gate_output,
             delete_gate_logits=delete_gate_logits,
             attention_mask=attention_mask_to_return,
-            # Tigler note: Some of these weren't included for the same reason as the previous note
             #### NEW CODE ####
         )
 
