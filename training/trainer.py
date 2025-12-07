@@ -58,7 +58,7 @@ class MrT5Trainer(Seq2SeqTrainer):
         if args.delete_gate_loss_coeff is None and args.target_deletion_rate is None:
             raise ValueError("One or more of the following args must be set: delete_gate_loss_coeff, target_deletion_rate")
 
-        self.delete_gate_loss_coeff = args.delete_gate_loss_coeff or 0.0
+        self.delete_gate_loss_coeff = torch.tensor(args.delete_gate_loss_coeff or 0.0)
 
         # Controller parameters
         self.p_acc = 0.0
@@ -68,7 +68,7 @@ class MrT5Trainer(Seq2SeqTrainer):
         err = target_deletion - current_deletion
         self.p_acc = 0.9 * self.p_acc + 0.1 * self.args.controller_p * err
         self.i_acc = self.i_acc + self.args.controller_i * err
-        return max(0.0, self.p_acc + self.i_acc)
+        return self.p_acc + self.i_acc
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         self.model_accepts_loss_kwargs = False
@@ -102,7 +102,7 @@ class MrT5Trainer(Seq2SeqTrainer):
         self.log({
             'cross_entropy_loss': cross_entropy_loss.item(),
             'delete_gate_loss': delete_gate_loss.item(),
-            'delete_gate_loss_coeff': self.delete_gate_loss_coeff,
+            'delete_gate_loss_coeff': self.delete_gate_loss_coeff.item(),
             'percent_non_pad_deleted_tokens': percent_non_pad_deleted_tokens.item(),
         }, time.time())
 
