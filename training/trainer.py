@@ -21,6 +21,9 @@ class MrT5TrainingArguments(Seq2SeqTrainingArguments):
     controller_i: float = field(
         default=1e-5, metadata={"help": "Integral gain for the controller."}
     )
+    controller_d: float = field(
+        default=1e-6, metadata={"help": "Differential gain for the controller."}
+    )
     hard_delete: bool = field(
         default=False, metadata={"help": "Whether to actually remove hidden states from computation to realize efficiency gains."}
     )
@@ -61,14 +64,20 @@ class MrT5Trainer(Seq2SeqTrainer):
         self.delete_gate_loss_coeff = torch.tensor(args.delete_gate_loss_coeff or 0.0)
 
         # Controller parameters
-        self.p_acc = 0.0
         self.i_acc = 0.0
+        self.previous_err = 0.0
 
-    def pi_controller(self, target_deletion, current_deletion):
+    def pid_controller(self, target_deletion, current_deletion):
         err = target_deletion - current_deletion
-        self.p_acc = 0.9 * self.p_acc + 0.1 * self.args.controller_p * err
-        self.i_acc = self.i_acc + self.args.controller_i * err
-        return self.p_acc + self.i_acc
+        self.i_acc += err
+
+        p = self.args.controller_p * err
+        i = self.i_acc * self.args.controller_i
+        d = self.args.controller_d * (err - self.previous_err)
+
+        self.previous_err = err
+
+        return p + i + d
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         self.model_accepts_loss_kwargs = False
@@ -108,7 +117,7 @@ class MrT5Trainer(Seq2SeqTrainer):
 
         # Update delete_gate_loss_coeff if needed
         if self.args.target_deletion_rate is not None:
-            self.delete_gate_loss_coeff = self.pi_controller(
+            self.delete_gate_loss_coeff = self.pid_controller(
                 self.args.target_deletion_rate,
                 percent_non_pad_deleted_tokens / 100)
 
