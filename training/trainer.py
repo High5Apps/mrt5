@@ -4,6 +4,8 @@ sys.path.append('..')
 from transformers import Seq2SeqTrainingArguments, Seq2SeqTrainer
 from dataclasses import dataclass, field
 from typing import Optional
+import time
+import torch
 
 @dataclass
 class MrT5TrainingArguments(Seq2SeqTrainingArguments):
@@ -93,15 +95,21 @@ class MrT5Trainer(Seq2SeqTrainer):
 
         loss = cross_entropy_loss + delete_gate_loss
 
-        if self.args.target_deletion_rate is not None:
-            # Count on average how many tokens are deleted, excluding pad tokens
-            num_non_pad_tokens = non_pad_mask.sum()
-            num_non_pad_deleted_tokens = ((delete_gate_output < model.config.deletion_threshold) & non_pad_mask).sum()
-            percent_non_pad_deleted_tokens = num_non_pad_deleted_tokens / num_non_pad_tokens * 100
+        # Log metrics
+        num_non_pad_tokens = non_pad_mask.sum()
+        num_non_pad_deleted_tokens = ((delete_gate_output < model.config.deletion_threshold) & non_pad_mask).sum()
+        percent_non_pad_deleted_tokens = num_non_pad_deleted_tokens / num_non_pad_tokens * 100
+        self.log({
+            'cross_entropy_loss': cross_entropy_loss.item(),
+            'delete_gate_loss': delete_gate_loss.item(),
+            'delete_gate_loss_coeff': self.delete_gate_loss_coeff,
+            'percent_non_pad_deleted_tokens': percent_non_pad_deleted_tokens.item(),
+        }, time.time())
 
+        # Update delete_gate_loss_coeff if needed
+        if self.args.target_deletion_rate is not None:
             self.delete_gate_loss_coeff = self.pi_controller(
                 self.args.target_deletion_rate,
                 percent_non_pad_deleted_tokens / 100)
 
         return (loss, outputs) if return_outputs else loss
-
