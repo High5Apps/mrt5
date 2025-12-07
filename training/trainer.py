@@ -66,6 +66,7 @@ class MrT5Trainer(Seq2SeqTrainer):
         # Controller parameters
         self.i_acc = 0.0
         self.previous_err = 0.0
+        self._microstep = 0 # This must be tracked to know when to skip PID controller updates when gradient_accumulation_steps > 1
 
     def pid_controller(self, target_deletion, current_deletion):
         err = target_deletion - current_deletion
@@ -116,7 +117,8 @@ class MrT5Trainer(Seq2SeqTrainer):
         }, time.time())
 
         # Update delete_gate_loss_coeff if needed
-        if self.args.target_deletion_rate is not None:
+        self._microstep += 1
+        if self.args.target_deletion_rate is not None and self._microstep % self.args.gradient_accumulation_steps == 0:
             self.delete_gate_loss_coeff = self.pid_controller(
                 self.args.target_deletion_rate,
                 percent_non_pad_deleted_tokens / 100)
