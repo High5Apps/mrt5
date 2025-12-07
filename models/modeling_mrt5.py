@@ -236,9 +236,6 @@ class MrT5Attention(T5Attention):
         scores += position_bias_masked
 
         #### NEW CODE ####
-        # Log scores to return for loss calculation
-        # Tigler note: forgot to include code that adds scores_to_return to outputs
-        scores_to_return = scores
 
         # Apply the mask from the delete gate
         if delete_gate_mask is not None:
