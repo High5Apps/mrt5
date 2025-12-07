@@ -100,17 +100,13 @@ class ScaledSigmoid(nn.Module):
 class SigmoidDeleteGate(nn.Module):
     def __init__(self, config):
         super().__init__()
-        self.has_layer_norm = config.gate_layer_norm
-        if self.has_layer_norm:
-            self.layer_norm = T5LayerNorm(config.hidden_size)
+        self.layer_norm = T5LayerNorm(config.hidden_size)
         self.feed_forward = nn.Linear(config.hidden_size, 1)
         self._init_weights(self.feed_forward)
         self.activation = ScaledSigmoid(config.sigmoid_mask_scale)
-        self.use_gumbel_noise = config.use_gumbel_noise
 
     def forward(self, hidden_states, input_ids):
-        if self.has_layer_norm:
-            hidden_states = self.layer_norm(hidden_states)
+        hidden_states = self.layer_norm(hidden_states)
         delete_gate_logits = self.feed_forward(hidden_states)
 
         gate_values = self.activation(delete_gate_logits)
@@ -395,11 +391,7 @@ class MrT5Block(GradientCheckpointingLayer):
         # Add delete gate if needed
         self.has_delete_gate = not config.is_decoder and (layer_idx == config.delete_gate_layer)
         if self.has_delete_gate:
-            if config.deletion_type == "scaled_sigmoid":
-                self.delete_gate = SigmoidDeleteGate(config)
-            else:
-                raise ValueError(
-                    f"Invalid deletion type: {config.deletion_type}")
+            self.delete_gate = SigmoidDeleteGate(config)
 
         # Set hard_delete flags
         self.sigmoid_mask_scale = config.sigmoid_mask_scale
