@@ -68,6 +68,11 @@ class MrT5Trainer(Seq2SeqTrainer):
         self.previous_err = 0.0
         self._microstep = 0 # This must be tracked to know when to skip PID controller updates when gradient_accumulation_steps > 1
 
+        print('Setting requires_grad = False for delete gate bias')
+        self.delete_gate_bias = model.encoder.block[3].delete_gate.feed_forward.bias
+        self.delete_gate_bias.requires_grad = False
+        self.initial_delete_gate_bias = self.delete_gate_bias.item()
+
     def pid_controller(self, target_deletion, current_deletion):
         err = target_deletion - current_deletion
         self.i_acc += err
@@ -96,30 +101,27 @@ class MrT5Trainer(Seq2SeqTrainer):
         )
 
         # Compute the cross entropy loss
-        cross_entropy_loss = outputs.loss
+        loss = outputs.loss
 
         # Compute the delete gate loss
         delete_gate_output = outputs.delete_gate_output.squeeze(-1)
         non_pad_mask = input_ids != 0 # Create a mask to exclude PAD tokens
-        delete_gate_loss = delete_gate_output[non_pad_mask].mean() * self.delete_gate_loss_coeff
-
-        loss = cross_entropy_loss + delete_gate_loss
 
         # Log metrics
         num_non_pad_tokens = non_pad_mask.sum()
         num_non_pad_deleted_tokens = ((delete_gate_output < model.config.deletion_threshold) & non_pad_mask).sum()
         percent_non_pad_deleted_tokens = num_non_pad_deleted_tokens / num_non_pad_tokens * 100
         self.log({
-            'cross_entropy_loss': cross_entropy_loss.item(),
-            'delete_gate_loss': delete_gate_loss.item(),
-            'delete_gate_loss_coeff': self.delete_gate_loss_coeff.item(),
             'percent_non_pad_deleted_tokens': percent_non_pad_deleted_tokens.item(),
+            'delete_gate_bias': self.delete_gate_bias.item(),
+            'delete_gate_mean': delete_gate_output[non_pad_mask].mean().item(),
+            'delete_gate_output': delete_gate_output[non_pad_mask],
         }, time.time())
 
-        # Update delete_gate_loss_coeff if needed
+        # Update delete gate bias if needed
         self._microstep += 1
         if self.args.target_deletion_rate is not None and self._microstep % self.args.gradient_accumulation_steps == 0:
-            self.delete_gate_loss_coeff = self.pid_controller(
+            self.delete_gate_bias.data = self.initial_delete_gate_bias - self.pid_controller(
                 self.args.target_deletion_rate,
                 percent_non_pad_deleted_tokens / 100)
 
