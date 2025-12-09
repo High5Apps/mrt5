@@ -8,9 +8,11 @@ class MrT5Config(T5Config):
         sigmoid_mask_scale=-30.0,
         deletion_threshold=-15.0,
         delete_gate_layer=3,
+        target_deletion_rate=0.5,
         **kwargs,
     ):
         super().__init__(*args, **kwargs)
         self.deletion_threshold = deletion_threshold
         self.sigmoid_mask_scale = sigmoid_mask_scale
         self.delete_gate_layer = delete_gate_layer
+        self.target_deletion_rate = target_deletion_rate

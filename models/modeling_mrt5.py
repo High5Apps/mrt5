@@ -396,6 +396,7 @@ class MrT5Block(GradientCheckpointingLayer):
         # Set hard_delete flags
         self.sigmoid_mask_scale = config.sigmoid_mask_scale
         self.deletion_threshold = config.deletion_threshold
+        self.target_deletion_rate = config.target_deletion_rate
         #### NEW CODE ####
 
     #### NEW CODE ####
@@ -473,6 +474,12 @@ class MrT5Block(GradientCheckpointingLayer):
             delete_gate_values, delete_gate_logits = self.delete_gate(
                 hidden_states, input_ids)
             delete_gate_mask = delete_gate_values
+
+            delete_gate_output = delete_gate_values.squeeze(-1)
+            non_pad_mask = input_ids != 0 # Create a mask to exclude PAD tokens
+            non_pad_delete_outputs = delete_gate_output[non_pad_mask]
+            quantile_val = torch.quantile(non_pad_delete_outputs, self.target_deletion_rate)
+            self.deletion_threshold = quantile_val
 
             # Raise error if all tokens are deleted in any sequence in batch
             if (delete_gate_values < self.deletion_threshold).all():
