@@ -73,7 +73,7 @@ class MrT5Trainer(Seq2SeqTrainer):
         self.log({
             'percent_non_pad_deleted_tokens': percent_non_pad_deleted_tokens.item(),
             'delete_gate_mean': delete_gate_output[non_pad_mask].mean().item(),
-            'delete_gate_output': delete_gate_output[non_pad_mask],
+            'delete_gate_output': delete_gate_output[non_pad_mask].tolist(),
             'deletion_threshold': deletion_threshold.item(),
         }, time.time())
 
