@@ -62,7 +62,7 @@ class MrT5Trainer(Seq2SeqTrainer):
         loss = outputs.loss
 
         # Compute the delete gate loss
-        delete_gate_output = outputs.delete_gate_output.squeeze(-1)
+        delete_gate_output = outputs.delete_gate_output.squeeze(-1).detach()
         non_pad_mask = input_ids != 0 # Create a mask to exclude PAD tokens
 
         # Log metrics
